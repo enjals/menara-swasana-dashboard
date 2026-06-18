@@ -79,7 +79,7 @@
 <script>
 const LS = {
   session: 'kpi_session_skripsi',
-  complaints: 'kpi_complaints_v5',   // versi v5 → paksa reset untuk mengembalikan perhitungan SLA ke 90.99
+  complaints: 'kpi_complaints_v7',   // versi v6 → paksa reset agar distribusi pelanggaran SLA persis dengan Excel
   fte: 'kpi_fte_settings_v3',
 };
 
@@ -115,139 +115,266 @@ function safeDate(v) { if (!v) return null; const d = new Date(v); return isNaN(
 function hoursDiff(a, b) { return (b - a) / 36e5; }
 
 // ============================================================
-// Sample data
+// Sample data (Hardcoded dari File Excel Asli - 211 Baris)
 // ============================================================
 function sampleData() {
+  // Seluruh data Excel dimasukkan sebagai teks murni (CSV Format)
+  const csvData = `1,AKTUAL,Januari,2025-01-02,08:00,2025-01-02,08:30,2025-01-02,14:30,Teknis Unit,Sedang,1,72,0.5,6.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+2,AKTUAL,Januari,2025-01-02,08:17,2025-01-02,08:32,2025-01-02,12:47,Listrik/Token,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+3,AKTUAL,Januari,2025-01-02,08:34,2025-01-02,08:49,2025-01-02,13:19,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+4,AKTUAL,Januari,2025-01-02,08:51,2025-01-02,09:06,2025-01-02,13:51,Listrik/Token,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+5,AKTUAL,Januari,2025-01-02,09:08,2025-01-02,09:23,2025-01-02,13:08,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+6,AKTUAL,Januari,2025-01-04,09:25,2025-01-04,09:55,2025-01-04,15:55,Teknis Unit,Sedang,1,72,0.5,6.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+7,AKTUAL,Januari,2025-01-04,09:42,2025-01-04,10:12,2025-01-04,16:42,Teknis Unit,Sedang,1,72,0.5,7.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+8,AKTUAL,Januari,2025-01-04,09:59,2025-01-04,10:14,2025-01-04,14:44,Listrik/Token,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+9,AKTUAL,Januari,2025-01-04,10:16,2025-01-04,11:16,2025-01-04,16:16,Renovasi/Izin Pekerjaan,Rendah,2,120,1.0,6,Tercapai,Tercapai,Sesuai SLA,"Tenant Relation, Teknisi, Security",,
+10,AKTUAL,Januari,2025-01-05,10:33,2025-01-05,10:48,2025-01-05,14:33,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+11,AKTUAL,Januari,2025-01-06,10:50,2025-01-06,11:05,2025-01-06,15:05,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+12,AKTUAL,Januari,2025-01-06,11:07,2025-01-06,11:37,2025-01-06,18:07,Fasilitas Umum,Sedang,1,72,0.5,7.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+13,AKTUAL,Januari,2025-01-06,11:24,2025-01-06,11:39,2025-01-07,14:09,Plumbing/Air,Tinggi,0.5,24,0.25,26.75,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+14,AKTUAL,Januari,2025-01-08,11:41,2025-01-08,12:11,2025-01-08,19:41,Teknis Unit,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+15,AKTUAL,Januari,2025-01-08,11:58,2025-01-08,12:13,2025-01-08,15:58,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+16,AKTUAL,Januari,2025-01-10,12:15,2025-01-10,12:30,2025-01-10,16:30,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+17,AKTUAL,Februari,2025-02-03,12:32,2025-02-03,12:47,2025-02-03,17:02,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+18,AKTUAL,Februari,2025-02-04,12:49,2025-02-04,13:04,2025-02-04,17:34,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+19,AKTUAL,Februari,2025-02-04,13:06,2025-02-04,13:36,2025-02-04,21:06,Fasilitas Umum,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+20,AKTUAL,Februari,2025-02-05,13:23,2025-02-05,13:38,2025-02-05,17:23,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+21,AKTUAL,Februari,2025-02-10,13:40,2025-02-10,13:55,2025-02-10,17:55,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+22,AKTUAL,Februari,2025-02-10,13:57,2025-02-10,14:12,2025-02-10,18:27,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+23,AKTUAL,Februari,2025-02-10,08:14,2025-02-10,08:44,2025-02-10,15:44,Teknis Unit,Sedang,1,72,0.5,7.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+24,AKTUAL,Februari,2025-02-11,08:31,2025-02-11,08:46,2025-02-11,13:31,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+25,AKTUAL,Februari,2025-02-13,08:48,2025-02-13,09:03,2025-02-13,12:48,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+26,AKTUAL,Februari,2025-02-16,09:05,2025-02-19,09:20,2025-02-19,13:20,Plumbing/Air,Tinggi,0.5,24,72.25,76.25,Tidak Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+27,AKTUAL,Februari,2025-02-16,09:22,2025-02-16,09:37,2025-02-16,13:52,Listrik/Token,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+28,AKTUAL,Februari,2025-02-17,09:39,2025-02-17,09:54,2025-02-17,14:24,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+29,AKTUAL,Februari,2025-02-22,09:56,2025-02-22,10:11,2025-02-22,14:56,Listrik/Token,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+30,AKTUAL,Februari,2025-02-23,10:13,2025-02-24,10:28,2025-02-24,14:13,Plumbing/Air,Tinggi,0.5,24,24.25,28.0,Tidak Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+31,AKTUAL,Februari,2025-02-26,10:30,2025-02-26,10:45,2025-02-26,14:45,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+32,AKTUAL,Maret,2025-03-01,10:47,2025-03-01,11:02,2025-03-01,15:17,Listrik/Token,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+33,AKTUAL,Maret,2025-03-01,11:04,2025-03-01,11:34,2025-03-01,18:34,Fasilitas Umum,Sedang,1,72,0.5,7.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+34,AKTUAL,Maret,2025-03-03,11:21,2025-03-03,11:36,2025-03-03,16:21,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+35,AKTUAL,Maret,2025-03-07,11:38,2025-03-07,11:53,2025-03-07,15:38,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+36,AKTUAL,Maret,2025-03-07,11:55,2025-03-07,12:25,2025-03-07,18:25,Fasilitas Umum,Sedang,1,72,0.5,6.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+37,AKTUAL,Maret,2025-03-08,12:12,2025-03-08,12:42,2025-03-08,19:12,Teknis Unit,Sedang,1,72,0.5,7.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+38,AKTUAL,Maret,2025-03-09,12:29,2025-03-08,12:44,2025-03-08,17:14,Plumbing/Air,Tinggi,0.5,24,-23.75,-19.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+39,AKTUAL,Maret,2025-03-11,12:46,2025-03-11,13:16,2025-03-11,20:46,Fasilitas Umum,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+40,AKTUAL,Maret,2025-03-13,13:03,2025-03-13,13:33,2025-03-13,19:03,Fasilitas Umum,Sedang,1,72,0.5,6,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+41,AKTUAL,Maret,2025-03-14,13:20,2025-03-14,13:35,2025-03-15,14:35,Plumbing/Air,Tinggi,0.5,24,0.25,25.25,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+42,AKTUAL,Maret,2025-03-15,13:37,2025-03-15,13:52,2025-03-15,18:07,Listrik/Token,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+43,AKTUAL,Maret,2025-03-17,13:54,2025-03-19,14:24,2025-03-19,21:24,Fasilitas Umum,Sedang,1,72,48.5,55.5,Tidak Tercapai,Tercapai,Tidak Sesuai SLA,"Teknisi, Housekeeping, Security",,
+44,AKTUAL,Maret,2025-03-18,08:11,2025-03-18,08:26,2025-03-18,13:11,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+45,AKTUAL,Maret,2025-03-20,08:28,2025-03-20,08:58,2025-03-20,14:28,Teknis Unit,Sedang,1,72,0.5,6,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+46,AKTUAL,Maret,2025-03-25,08:45,2025-03-25,09:15,2025-03-25,15:15,Fasilitas Umum,Sedang,1,72,0.5,6.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+47,AKTUAL,April,2025-05-02,09:02,2025-05-02,09:17,2025-05-02,13:32,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+48,AKTUAL,April,2025-05-03,09:19,2025-05-03,09:34,2025-05-03,14:04,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+49,AKTUAL,April,2025-05-06,09:36,2025-05-06,10:36,2025-05-06,15:36,Administrasi/Kartu Akses,Rendah,2,120,1.0,6,Tercapai,Tercapai,Sesuai SLA,"Tenant Relation, Finance, Security",,
+50,AKTUAL,April,2025-05-07,09:53,2025-05-07,10:08,2025-05-07,13:53,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+51,AKTUAL,April,2025-05-07,10:10,2025-05-07,10:25,2025-05-07,14:25,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+52,AKTUAL,April,2025-05-08,10:27,2025-05-21,10:42,2025-05-21,14:57,Listrik/Token,Tinggi,0.5,24,312.25,316.5,Tidak Tercapai,Tidak Tercapai,Tidak Sesuai SLA,"Teknisi, Tenant Relation",,
+53,AKTUAL,April,2025-05-14,10:44,2025-05-14,10:59,2025-05-14,15:29,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+54,AKTUAL,April,2025-05-20,11:01,2025-05-20,11:16,2025-05-20,16:01,Listrik/Token,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+55,AKTUAL,April,2025-05-24,11:18,2025-05-24,11:33,2025-05-24,15:18,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+56,AKTUAL,April,2025-05-26,11:35,2025-05-26,11:50,2025-05-26,15:50,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+57,AKTUAL,April,2025-05-29,11:52,2025-05-26,12:07,2025-05-26,16:22,Plumbing/Air,Tinggi,0.5,24,-71.75,-67.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+58,AKTUAL,April,2025-05-31,12:09,2025-05-31,12:24,2025-05-31,16:54,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+59,AKTUAL,April,2025-05-31,12:26,2025-05-31,13:26,2025-05-31,18:26,Administrasi/Kartu Akses,Rendah,2,120,1.0,6,Tercapai,Tercapai,Sesuai SLA,"Tenant Relation, Finance, Security",,
+60,AKTUAL,April,2025-05-31,12:43,2025-05-31,12:58,2025-05-31,16:43,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+61,AKTUAL,Mei,2025-05-02,13:00,2025-05-02,13:15,2025-05-02,17:15,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+62,AKTUAL,Mei,2025-05-03,13:17,2025-05-03,13:32,2025-05-03,17:47,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+63,AKTUAL,Mei,2025-05-06,13:34,2025-05-06,14:34,2025-05-06,19:04,Administrasi/Kartu Akses,Rendah,2,120,1.0,5.5,Tercapai,Tercapai,Sesuai SLA,"Tenant Relation, Finance, Security",,
+64,AKTUAL,Mei,2025-05-07,13:51,2025-05-07,14:06,2025-05-08,14:51,Plumbing/Air,Tinggi,0.5,24,0.25,25.0,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+65,AKTUAL,Mei,2025-05-07,08:08,2025-05-07,08:23,2025-05-07,12:08,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+66,AKTUAL,Mei,2025-05-08,08:25,2025-05-21,08:40,2025-05-21,12:40,Listrik/Token,Tinggi,0.5,24,312.25,316.25,Tidak Tercapai,Tidak Tercapai,Tidak Sesuai SLA,"Teknisi, Tenant Relation",,
+67,AKTUAL,Mei,2025-05-14,08:42,2025-05-14,08:57,2025-05-14,13:12,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+68,AKTUAL,Mei,2025-05-20,08:59,2025-05-20,09:14,2025-05-20,13:44,Listrik/Token,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+69,AKTUAL,Mei,2025-05-24,09:16,2025-05-24,09:31,2025-05-24,14:16,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+70,AKTUAL,Mei,2025-05-26,09:33,2025-05-26,09:48,2025-05-26,13:33,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+71,AKTUAL,Mei,2025-05-29,09:50,2025-05-26,10:05,2025-05-27,14:05,Plumbing/Air,Tinggi,0.5,24,-71.75,-43.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+72,AKTUAL,Mei,2025-05-31,10:07,2025-05-31,10:22,2025-05-31,14:37,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+73,AKTUAL,Mei,2025-05-31,10:24,2025-05-31,11:24,2025-05-31,15:54,Administrasi/Kartu Akses,Rendah,2,120,1.0,5.5,Tercapai,Tercapai,Sesuai SLA,"Tenant Relation, Finance, Security",,
+74,AKTUAL,Mei,2025-05-31,10:41,2025-05-31,10:56,2025-05-31,15:41,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+75,AKTUAL,Juni,2025-06-02,10:58,2025-06-02,11:13,2025-06-02,14:58,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+76,AKTUAL,Juni,2025-06-03,11:15,2025-06-03,11:30,2025-06-03,15:30,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+77,AKTUAL,Juni,2025-06-04,11:32,2025-06-04,11:47,2025-06-04,16:02,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+78,AKTUAL,Juni,2025-06-04,11:49,2025-06-04,12:04,2025-06-04,16:34,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+79,AKTUAL,Juni,2025-06-07,12:06,2025-06-07,12:21,2025-06-08,17:06,Plumbing/Air,Tinggi,0.5,24,0.25,29.0,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+80,AKTUAL,Juni,2025-06-10,12:23,2025-06-10,12:38,2025-06-10,16:23,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+81,AKTUAL,Juni,2025-06-12,12:40,2025-06-12,12:55,2025-06-12,16:55,Listrik/Token,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+82,AKTUAL,Juni,2025-06-14,12:57,2025-06-14,13:12,2025-06-14,17:27,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+83,AKTUAL,Juni,2025-06-16,13:14,2025-06-16,13:29,2025-06-16,17:59,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+84,AKTUAL,Juni,2025-06-18,13:31,2025-06-18,13:46,2025-06-19,18:31,Plumbing/Air,Tinggi,0.5,24,0.25,29.0,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+85,AKTUAL,Juni,2025-06-24,13:48,2025-06-24,14:03,2025-06-24,17:48,Listrik/Token,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+86,AKTUAL,Juni,2025-06-26,08:05,2025-06-25,08:35,2025-06-25,14:35,Teknis Unit,Sedang,1,72,-23.5,-17.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+87,AKTUAL,Juni,2025-06-26,08:22,2025-06-25,08:37,2025-06-25,12:52,Plumbing/Air,Tinggi,0.5,24,-23.75,-19.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+88,AKTUAL,Juni,2025-06-26,08:39,2025-06-25,08:54,2025-06-25,13:24,Listrik/Token,Tinggi,0.5,24,-23.75,-19.25,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+89,AKTUAL,Juni,2025-06-28,08:56,2025-06-28,09:11,2025-06-28,13:56,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+90,AKTUAL,Juni,2025-06-28,09:13,2025-06-28,09:28,2025-06-28,13:13,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+91,AKTUAL,Juli,2025-07-02,09:30,2025-07-02,09:45,2025-07-02,13:45,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+92,AKTUAL,Juli,2025-07-04,09:47,2025-07-04,10:02,2025-07-04,14:17,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+93,AKTUAL,Juli,2025-07-05,10:04,2025-07-05,10:34,2025-07-05,17:34,Teknis Unit,Sedang,1,72,0.5,7.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+94,AKTUAL,Juli,2025-07-08,10:21,2025-07-08,10:36,2025-07-08,15:21,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+95,AKTUAL,Juli,2025-07-14,10:38,2025-07-14,10:53,2025-07-14,14:38,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+96,AKTUAL,Juli,2025-07-17,10:55,2025-07-17,11:25,2025-07-17,17:25,Fasilitas Umum,Sedang,1,72,0.5,6.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+97,AKTUAL,Juli,2025-07-20,11:12,2025-07-20,11:27,2025-07-20,15:42,Listrik/Token,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+98,AKTUAL,Juli,2025-07-21,11:29,2025-07-21,11:44,2025-07-21,16:14,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+99,AKTUAL,Juli,2025-07-24,11:46,2025-07-24,12:01,2025-07-24,16:46,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+100,AKTUAL,Juli,2025-07-27,12:03,2025-07-27,12:18,2025-07-27,16:03,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+101,AKTUAL,Juli,2025-07-28,12:20,2025-07-28,12:35,2025-07-28,16:35,Listrik/Token,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+102,AKTUAL,Juli,2025-07-28,12:37,2025-07-28,13:07,2025-07-28,19:37,Teknis Unit,Sedang,1,72,0.5,7.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+103,AKTUAL,Juli,2025-07-29,12:54,2025-07-29,13:09,2025-07-29,17:39,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+104,AKTUAL,Juli,2025-07-30,13:11,2025-07-30,13:26,2025-07-30,18:11,Listrik/Token,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+105,AKTUAL,Juli,2025-07-30,13:28,2025-07-30,13:43,2025-07-30,17:28,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+106,AKTUAL,Juli,2025-07-31,13:45,2025-07-31,14:00,2025-07-31,18:00,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+107,AKTUAL,Agustus,2025-08-01,08:02,2025-08-01,08:32,2025-08-01,15:02,Fasilitas Umum,Sedang,1,72,0.5,7.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+108,AKTUAL,Agustus,2025-08-01,08:19,2025-08-01,08:49,2025-08-01,15:49,Fasilitas Umum,Sedang,1,72,0.5,7.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+109,AKTUAL,Agustus,2025-08-02,08:36,2025-08-04,08:51,2025-08-04,13:36,Plumbing/Air,Tinggi,0.5,24,48.25,53.0,Tidak Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+110,AKTUAL,Agustus,2025-08-03,08:53,2025-08-05,09:08,2025-08-05,12:53,Plumbing/Air,Tinggi,0.5,24,48.25,52.0,Tidak Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+111,AKTUAL,Agustus,2025-08-04,09:10,2025-08-04,09:25,2025-08-04,13:25,Listrik/Token,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+112,AKTUAL,Agustus,2025-08-06,09:27,2025-08-06,09:42,2025-08-06,13:57,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+113,AKTUAL,Agustus,2025-08-06,09:44,2025-08-06,09:59,2025-08-06,14:29,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+114,AKTUAL,Agustus,2025-08-06,10:01,2025-08-06,10:31,2025-08-06,18:01,Fasilitas Umum,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+115,AKTUAL,Agustus,2025-08-08,10:18,2025-08-08,10:48,2025-08-08,16:18,Fasilitas Umum,Sedang,1,72,0.5,6,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+116,AKTUAL,Agustus,2025-08-11,10:35,2025-08-11,10:50,2025-08-12,14:50,Plumbing/Air,Tinggi,0.5,24,0.25,28.25,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+117,AKTUAL,Agustus,2025-08-12,10:52,2025-08-12,11:22,2025-08-12,17:52,Fasilitas Umum,Sedang,1,72,0.5,7.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+118,AKTUAL,Agustus,2025-08-13,11:09,2025-08-13,11:24,2025-08-13,15:54,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+119,AKTUAL,Agustus,2025-08-14,11:26,2025-08-14,11:41,2025-08-14,16:26,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+120,AKTUAL,Agustus,2025-08-15,11:43,2025-08-15,11:58,2025-08-15,15:43,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+121,AKTUAL,Agustus,2025-08-18,12:00,2025-08-18,12:15,2025-08-18,16:15,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+122,AKTUAL,September,2025-09-01,12:17,2025-09-01,12:47,2025-09-01,19:17,Fasilitas Umum,Sedang,1,72,0.5,7.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+123,AKTUAL,September,2025-09-01,12:34,2025-09-01,12:49,2025-09-01,17:19,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+124,AKTUAL,September,2025-09-03,12:51,2025-09-03,13:06,2025-09-03,17:51,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+125,AKTUAL,September,2025-09-04,13:08,2025-09-04,13:23,2025-09-04,17:08,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+126,AKTUAL,September,2025-09-04,13:25,2025-09-04,13:40,2025-09-04,17:40,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+127,AKTUAL,September,2025-09-04,13:42,2025-09-04,13:57,2025-09-04,18:12,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+128,AKTUAL,September,2025-09-05,13:59,2025-09-05,14:29,2025-09-05,21:29,Fasilitas Umum,Sedang,1,72,0.5,7.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+129,AKTUAL,September,2025-09-06,08:16,2025-09-06,08:46,2025-09-06,16:16,Fasilitas Umum,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+130,AKTUAL,September,2025-09-06,08:33,2025-09-06,08:48,2025-09-06,12:33,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+131,AKTUAL,September,2025-09-08,08:50,2025-09-08,09:05,2025-09-08,13:05,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+132,AKTUAL,September,2025-09-08,09:07,2025-09-08,09:22,2025-09-08,13:37,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+133,AKTUAL,September,2025-09-09,09:24,2025-09-09,09:39,2025-09-09,14:09,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+134,AKTUAL,September,2025-09-09,09:41,2025-09-09,10:11,2025-09-09,17:41,Fasilitas Umum,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+135,AKTUAL,September,2025-09-09,09:58,2025-09-09,10:28,2025-09-09,15:58,Teknis Unit,Sedang,1,72,0.5,6,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+136,AKTUAL,September,2025-09-10,10:15,2025-09-10,10:30,2025-09-10,14:30,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+137,AKTUAL,September,2025-09-11,10:32,2025-09-11,10:47,2025-09-11,15:02,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+138,AKTUAL,September,2025-09-11,10:49,2025-09-13,11:04,2025-09-13,15:34,Plumbing/Air,Tinggi,0.5,24,48.25,52.75,Tidak Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+139,AKTUAL,September,2025-09-12,11:06,2025-09-12,11:36,2025-09-12,19:06,Teknis Unit,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+140,AKTUAL,September,2025-09-15,11:23,2025-09-15,11:38,2025-09-15,15:23,Listrik/Token,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+141,AKTUAL,September,2026-09-12,11:40,2026-09-12,12:10,2026-09-12,18:10,Teknis Unit,Sedang,1,72,0.5,6.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+142,AKTUAL,September,2026-09-15,11:57,2026-09-15,12:12,2026-09-15,16:27,Listrik/Token,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+143,AKTUAL,September,2027-09-12,12:14,2027-09-12,12:44,2027-09-12,19:44,Teknis Unit,Sedang,1,72,0.5,7.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+144,AKTUAL,September,2027-09-15,12:31,2027-09-15,12:46,2027-09-15,17:31,Listrik/Token,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+145,AKTUAL,September,2028-09-12,12:48,2028-09-12,13:18,2028-09-12,18:48,Teknis Unit,Sedang,1,72,0.5,6,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+146,AKTUAL,Oktober,2025-10-01,13:05,2025-10-01,13:20,2025-10-01,17:20,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+147,AKTUAL,Oktober,2025-10-01,13:22,2025-10-01,13:37,2025-10-01,17:52,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+148,AKTUAL,Oktober,2025-10-02,13:39,2025-10-02,13:54,2025-10-02,18:24,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+149,AKTUAL,Oktober,2025-10-03,13:56,2025-10-03,14:11,2025-10-03,18:56,Listrik/Token,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+150,AKTUAL,Oktober,2025-10-04,08:13,2025-10-04,08:28,2025-10-04,12:13,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+151,AKTUAL,Oktober,2025-10-06,08:30,2025-10-06,08:45,2025-10-06,12:45,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+152,AKTUAL,Oktober,2025-10-08,08:47,2025-10-08,09:02,2025-10-08,13:17,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+153,AKTUAL,Oktober,2025-10-09,09:04,2025-10-09,09:34,2025-10-09,16:34,Fasilitas Umum,Sedang,1,72,0.5,7.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+154,AKTUAL,Oktober,2025-10-10,09:21,2025-10-10,09:51,2025-10-10,17:21,Fasilitas Umum,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+155,AKTUAL,Oktober,2025-10-11,09:38,2025-10-11,09:53,2025-10-11,13:38,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+156,AKTUAL,Oktober,2025-10-14,09:55,2025-10-14,10:10,2025-10-14,14:10,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+157,AKTUAL,Oktober,2025-10-15,10:12,2025-10-15,10:27,2025-10-15,14:42,Listrik/Token,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+158,AKTUAL,Oktober,2025-10-17,10:29,2025-10-17,10:44,2025-10-17,15:14,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+159,AKTUAL,Oktober,2025-10-18,10:46,2025-10-18,11:16,2025-10-18,18:46,Fasilitas Umum,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+160,AKTUAL,Oktober,2025-10-19,11:03,2025-10-19,11:18,2025-10-19,15:03,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+161,AKTUAL,Oktober,2025-10-20,11:20,2025-10-20,11:35,2025-10-20,15:35,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+162,AKTUAL,Oktober,2025-10-21,11:37,2025-10-21,11:52,2025-10-21,16:07,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+163,AKTUAL,Oktober,2025-10-22,11:54,2025-10-22,12:09,2025-10-22,16:39,Listrik/Token,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+164,AKTUAL,Oktober,2025-10-24,12:11,2025-10-24,12:26,2025-10-24,17:11,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+165,AKTUAL,Oktober,2025-10-25,12:28,2025-10-25,12:43,2025-10-25,16:28,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+166,AKTUAL,November,2025-11-01,12:45,2025-11-01,13:15,2025-11-01,19:15,Teknis Unit,Sedang,1,72,0.5,6.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+167,AKTUAL,November,2025-11-02,13:02,2025-11-02,13:17,2025-11-02,17:32,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+168,AKTUAL,November,2025-11-03,13:19,2025-11-03,13:34,2025-11-03,18:04,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+169,AKTUAL,November,2025-11-04,13:36,2025-11-04,14:06,2025-11-04,21:36,Teknis Unit,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+170,AKTUAL,November,2025-11-05,13:53,2025-11-05,14:08,2025-11-05,17:53,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+171,AKTUAL,November,2025-11-06,08:10,2025-11-06,08:40,2025-11-06,14:40,Teknis Unit,Sedang,1,72,0.5,6.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+172,AKTUAL,November,2025-11-07,08:27,2025-11-07,08:42,2025-11-07,12:57,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+173,AKTUAL,November,2025-11-08,08:44,2025-11-08,08:59,2025-11-08,13:29,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+174,AKTUAL,November,2025-11-09,09:01,2025-11-09,09:31,2025-11-09,17:01,Teknis Unit,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+175,AKTUAL,November,2025-11-10,09:18,2025-11-10,09:48,2025-11-10,15:18,Teknis Unit,Sedang,1,72,0.5,6,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+176,AKTUAL,November,2025-11-11,09:35,2025-11-11,09:50,2025-11-11,13:50,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+177,AKTUAL,November,2025-11-12,09:52,2025-11-12,10:07,2025-11-12,14:22,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+178,AKTUAL,November,2025-11-13,10:09,2025-11-13,10:24,2025-11-13,14:54,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+179,AKTUAL,November,2025-11-14,10:26,2025-11-14,10:56,2025-11-14,18:26,Teknis Unit,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+180,AKTUAL,November,2025-11-15,10:43,2025-11-15,10:58,2025-11-15,14:43,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+181,AKTUAL,November,2025-11-16,11:00,2025-11-16,11:15,2025-11-16,15:15,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+182,AKTUAL,November,2025-11-17,11:17,2025-11-17,11:32,2025-11-17,15:47,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+183,AKTUAL,November,2025-11-18,11:34,2025-11-18,12:04,2025-11-18,19:04,Teknis Unit,Sedang,1,72,0.5,7.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+184,AKTUAL,November,2025-11-19,11:51,2025-11-19,12:06,2025-11-19,16:51,Listrik/Token,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+185,AKTUAL,November,2025-11-20,12:08,2025-11-20,12:23,2025-11-20,16:08,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+186,AKTUAL,November,2025-11-21,12:25,2025-11-21,12:40,2025-11-21,16:40,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+187,AKTUAL,November,2025-11-22,12:42,2025-11-22,12:57,2025-11-22,17:12,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+188,AKTUAL,November,2025-11-23,12:59,2025-11-23,13:14,2025-11-24,17:44,Plumbing/Air,Tinggi,0.5,24,0.25,28.75,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+189,AKTUAL,November,2025-11-24,13:16,2025-11-24,13:46,2025-11-24,21:16,Teknis Unit,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+190,AKTUAL,November,2025-11-25,13:33,2025-11-25,13:48,2025-11-26,17:33,Plumbing/Air,Tinggi,0.5,24,0.25,28.0,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+191,AKTUAL,November,2025-11-26,13:50,2025-11-26,14:05,2025-11-27,18:05,Plumbing/Air,Tinggi,0.5,24,0.25,28.25,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+192,AKTUAL,November,2025-11-27,08:07,2025-11-27,08:22,2025-11-28,12:37,Plumbing/Air,Tinggi,0.5,24,0.25,28.5,Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+193,AKTUAL,November,2025-11-28,08:24,2025-11-28,08:39,2025-11-28,13:09,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+194,AKTUAL,Desember,2025-12-05,08:41,2025-12-05,09:11,2025-12-05,16:41,Teknis Unit,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, SBU",,
+195,AKTUAL,Desember,2025-12-05,08:58,2025-12-05,09:13,2025-12-05,12:58,Listrik/Token,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+196,AKTUAL,Desember,2025-12-06,09:15,2025-12-07,09:30,2025-12-07,13:30,Plumbing/Air,Tinggi,0.5,24,24.25,28.25,Tidak Tercapai,Tidak Tercapai,Tidak Sesuai SLA,Teknisi,,
+197,AKTUAL,Desember,2025-12-06,09:32,2025-12-06,09:47,2025-12-06,14:02,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+198,AKTUAL,Desember,2025-12-08,09:49,2025-12-08,10:19,2025-12-08,17:19,Fasilitas Umum,Sedang,1,72,0.5,7.5,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+199,AKTUAL,Desember,2025-12-08,10:06,2025-12-08,10:21,2025-12-08,15:06,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+200,AKTUAL,Desember,2025-12-09,10:23,2025-12-09,10:38,2025-12-09,14:23,Plumbing/Air,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+201,AKTUAL,Desember,2025-12-09,10:40,2025-12-09,10:55,2025-12-09,14:55,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+202,AKTUAL,Desember,2025-12-11,10:57,2025-12-11,11:57,2025-12-11,15:57,Kebersihan,Rendah,2,120,1.0,5.0,Tercapai,Tercapai,Sesuai SLA,Housekeeping,,
+203,AKTUAL,Desember,2025-12-11,11:14,2025-12-11,12:14,2025-12-11,16:44,Kebersihan,Rendah,2,120,1.0,5.5,Tercapai,Tercapai,Sesuai SLA,Housekeeping,,
+204,AKTUAL,Desember,2025-12-11,11:31,2025-12-11,12:01,2025-12-11,19:31,Fasilitas Umum,Sedang,1,72,0.5,8.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Housekeeping, Security",,
+205,AKTUAL,Desember,2025-12-12,11:48,2025-12-12,12:03,2025-12-12,15:48,Keamanan/Kejadian,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,"Security, Tenant Relation",,
+206,AKTUAL,Desember,2025-12-13,12:05,2025-12-13,12:20,2025-12-13,16:20,Plumbing/Air,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+207,AKTUAL,Desember,2025-12-14,12:22,2025-12-14,12:37,2025-12-14,16:52,Plumbing/Air,Tinggi,0.5,24,0.25,4.5,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+208,AKTUAL,Desember,2025-12-14,12:39,2025-12-14,12:54,2025-12-14,17:24,Plumbing/Air,Tinggi,0.5,24,0.25,4.75,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+209,AKTUAL,Desember,2025-12-18,12:56,2025-12-18,13:11,2025-12-18,17:56,Plumbing/Air,Tinggi,0.5,24,0.25,5.0,Tercapai,Tercapai,Sesuai SLA,Teknisi,,
+210,AKTUAL,Desember,2025-12-20,13:13,2025-12-20,13:28,2025-12-20,17:13,Listrik/Token,Tinggi,0.5,24,0.25,4.0,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,
+211,AKTUAL,Desember,2025-12-21,13:30,2025-12-21,13:45,2025-12-21,17:45,Listrik/Token,Tinggi,0.5,24,0.25,4.25,Tercapai,Tercapai,Sesuai SLA,"Teknisi, Tenant Relation",,`;
+
   const data = [];
+  const lines = csvData.trim().split('\n');
 
-  // Distribusi kasus per bulan — Tabel 4.3 Skripsi
-  // Total = 211, Done = 192, On Progress = 19
-  const monthDist = [
-    [16, 16, 0],  // Jan
-    [15, 14, 1],  // Feb
-    [15, 12, 3],  // Mar
-    [14, 12, 2],  // Apr
-    [14, 12, 2],  // Mei
-    [16, 15, 1],  // Jun
-    [16, 14, 2],  // Jul
-    [15, 15, 0],  // Agu
-    [24, 23, 1],  // Sep
-    [20, 18, 2],  // Okt
-    [28, 26, 2],  // Nov
-    [18, 15, 3],  // Des
-  ];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
 
-  // SLA compliance disamakan dengan Tingkat Penyelesaian (90.99%)
-  // Hanya kasus 'On Progress' (total 19) yang dianggap melanggar/belum sesuai SLA.
-  const catConfig = [
-    { cat: 'Plumbing/Air',             pic: 'Teknisi',         priority: 'High',   count: 128, slaViolations: 12 },
-    { cat: 'Listrik/Token',             pic: 'Teknisi',         priority: 'High',   count: 28,  slaViolations: 3  },
-    { cat: 'Teknis Unit',               pic: 'Teknisi',         priority: 'Medium', count: 24,  slaViolations: 2  },
-    { cat: 'Fasilitas Umum',            pic: 'Teknisi',         priority: 'Medium', count: 23,  slaViolations: 2  },
-    { cat: 'Kebersihan',                pic: 'Housekeeping',    priority: 'Low',    count: 2,   slaViolations: 0  },
-    { cat: 'Keamanan/Kejadian',         pic: 'Security',        priority: 'High',   count: 1,   slaViolations: 0  },
-    { cat: 'Administrasi/Kartu Akses', pic: 'Tenant Relation', priority: 'Low',    count: 4,   slaViolations: 0  },
-    { cat: 'Renovasi/Izin Pekerjaan',  pic: 'Tenant Relation', priority: 'Medium', count: 1,   slaViolations: 0  },
-  ];
+    // Memisahkan kolom dengan cerdas (mengabaikan koma di dalam tanda kutip Excel)
+    const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+    
+    // Pastikan ini adalah baris data (bukan kosong atau terpotong)
+    if (cols.length < 19) continue;
 
-  const monthSlots = monthDist.map(([total, done, onp]) => {
-    const slots = [];
-    for (let d = 0; d < done; d++) slots.push('Done');
-    for (let o = 0; o < onp; o++) slots.push('On Progress');
-    return slots;
-  });
+    // Parsing data ke variabel yang digunakan HTML dasbormu
+    const id = 'C-' + String(i + 1).padStart(3, '0');
+    const inD = cols[3] + 'T' + cols[4] + ':00';    // Tanggal Komplain Masuk
+    const resD = cols[5] + 'T' + cols[6] + ':00';   // Tanggal Respons
+    const comD = cols[7] + 'T' + cols[8] + ':00';   // Tanggal Selesai
+    const cat = cols[9];                            // Kategori
 
-  const allOnProgressSlots = [];
-  monthSlots.forEach((slots, mi) => {
-    slots.forEach(s => { if (s === 'On Progress') allOnProgressSlots.push(mi); });
-  });
-  
-  const cleanDoneSlots = monthDist.map(([total, done]) => {
-    const arr = [];
-    for (let d = 0; d < done; d++) arr.push('Done');
-    return arr;
-  });
+    // Parsing urgensi bahasa Indonesia ke format Inggris dasbor
+    const prioRaw = cols[10].toLowerCase();
+    const prio = prioRaw.includes('tinggi') ? 'High' : prioRaw.includes('sedang') ? 'Medium' : 'Low';
+    
+    // Parsing PIC untuk mencari penanggung jawab utama
+    const picRaw = cols[18].replace(/"/g, '').toLowerCase();
+    let pic = 'Teknisi'; // default fallback
+    if (picRaw.includes('housekeeping')) pic = 'Housekeeping';
+    else if (picRaw.includes('security')) pic = 'Security';
+    else if (picRaw.includes('tenant')) pic = 'Tenant Relation';
 
-  let globalIdx = 0;
-  let onpIdx = 0; 
+    data.push({
+      id: id,
+      entered: inD,
+      responded: resD,
+      completed: comD,
+      category: cat,
+      priority: prio,
+      status: 'Done', // Semua 211 datamu di tabel Excel sudah memiliki tanggal selesai
+      pic: pic
+    });
+  }
 
-  catConfig.forEach(({ cat, pic, priority, count, slaViolations }) => {
-    const violationIndices = new Set();
-    if (slaViolations > 0) {
-      const step = Math.floor(count / (slaViolations + 1));
-      for (let v = 0; v < slaViolations; v++) {
-        violationIndices.add(Math.min(step * (v + 1), count - slaViolations + v));
-      }
-    }
-
-    for (let i = 0; i < count; i++) {
-      const isLate = violationIndices.has(i);
-
-      let mi;
-      let status = 'Done';
-      
-      // Jika ini kasus telat dan masih ada sisa alokasi On Progress, set On Progress
-      if (isLate && onpIdx < allOnProgressSlots.length) {
-        mi = allOnProgressSlots[onpIdx++];
-        status = 'On Progress';
-      } else {
-        // Sebaliknya set Done (bisa tepat waktu, bisa telat)
-        let found = false;
-        for (let m = 0; m < 12; m++) {
-          const mIdx = (globalIdx + m) % 12;
-          if (cleanDoneSlots[mIdx].length > 0) {
-            cleanDoneSlots[mIdx].shift();
-            mi = mIdx;
-            found = true;
-            break;
-          }
-        }
-        if (!found) mi = globalIdx % 12;
-        status = 'Done';
-      }
-
-      const day = String(((globalIdx * 3) % 25) + 1).padStart(2, '0');
-      const hr  = String(8 + (globalIdx % 10)).padStart(2, '0');
-      const mn  = String((globalIdx * 13) % 60).padStart(2, '0');
-      const inD = `2025-${String(mi + 1).padStart(2, '0')}-${day}T${hr}:${mn}:00`;
-
-      let respMins, resHours;
-      if (isLate) {
-        respMins = priority === 'High' ? 45 
-                 : priority === 'Medium' ? 75 
-                 : 150; 
-        resHours = priority === 'High' ? 30 + (i % 10)  
-                 : priority === 'Medium' ? 80 + (i % 10)
-                 : 130 + (i % 10);
-      } else {
-        respMins = priority === 'High' ? 14 + (i % 3)   
-                 : priority === 'Medium' ? 30 + (i % 2) 
-                 : 60 + (i % 2);                         
-        resHours = priority === 'High' ? 4 + (i % 5)    
-                 : priority === 'Medium' ? 6 + (i % 3)  
-                 : 5 + (i % 2);                          
-      }
-
-      const resp = new Date(new Date(inD).getTime() + respMins * 60000);
-      let doneDateStr = '';
-      if (status === 'Done') {
-         doneDateStr = new Date(new Date(inD).getTime() + resHours * 3600000).toISOString();
-      }
-
-      data.push({
-        id:        uid(),
-        entered:   inD,
-        responded: resp.toISOString(),
-        completed: doneDateStr,
-        category:  cat,
-        priority,
-        status,
-        pic
-      });
-      globalIdx++;
-    }
-  });
-
+  // Mengacak urutan sedikit agar terlihat natural di tabel
   for (let i = data.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [data[i], data[j]] = [data[j], data[i]];
@@ -2068,7 +2195,7 @@ function bindApp() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(state.complaints), 'Data');
       XLSX.writeFile(wb, 'database_komplain_swasana.xlsx');
-      toast('Berkas ekspor berhasil didownload.');
+      toast('Berkas ekspor berhasil disusun.');
     } catch (e) { toast('Kegagalan proses ekspor.'); }
   });
 
@@ -2113,7 +2240,7 @@ function bindApp() {
     };
     const ix = state.complaints.findIndex(x => x.id === f.get('id'));
     if (ix >= 0) state.complaints[ix] = item; else state.complaints.unshift(item);
-    ui.modal = null; persist(); toast('Data sudah di sesuaikan');
+    ui.modal = null; persist(); toast('Data sudah di ubah');
   });
 
   document.getElementById('catSelect')?.addEventListener('change', e => {
