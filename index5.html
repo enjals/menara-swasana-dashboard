@@ -1,0 +1,1685 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full bg-[#0a0a13]">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistem KPI & FTE Menara Swasana</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            carbon: '#fcfcfc',
+            obsidian: '#0a0a13',
+            pitch: '#000000',
+            void: '#040407',
+            graphite: '#08080c',
+            smoke: '#757580',
+            ash: '#a3a3b3',
+            charcoal: '#2a2a32',
+            iris: '#6199f6',
+            twilight: '#4f4f80',
+            specter: '#dedfee',
+          },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['"Space Mono"', 'ui-monospace', 'monospace'],
+          },
+          letterSpacing: {
+            display: '-3.6px',
+            headinglg: '-1.92px',
+            heading: '-1.33px',
+            headingsm: '-0.72px',
+            body: '0.16px',
+            eyebrow: '0.06em',
+          },
+          boxShadow: {
+            mockup: 'inset 0 0 0 1px #4f4f80, 0 0 60px rgba(79, 79, 128, 0.15)',
+            video: '0 24px 48px rgba(0, 0, 0, 0.5)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background: radial-gradient(circle at 50% 0%, rgba(79, 79, 128, 0.12) 0%, #0a0a13 70%), #0a0a13;
+      background-attachment: fixed;
+      color: #fcfcfc;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2a32; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4f4f80; }
+
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+      filter: invert(1);
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col text-[14px]">
+
+<div id="app" class="min-h-screen flex flex-col"></div>
+
+<script>
+const LS = {
+  session: 'kpi_session_skripsi',
+  complaints: 'kpi_complaints_v3',   // versi baru → paksa reset data lama
+  fte: 'kpi_fte_settings_v3',
+};
+
+// Kategori konsisten Bahasa Indonesia
+const categories = [
+  'Plumbing/Air', 'Listrik/Token', 'Teknis Unit', 'Fasilitas Umum',
+  'Kebersihan', 'Keamanan/Kejadian', 'Administrasi/Kartu Akses', 'Renovasi/Izin Kerja'
+];
+const priorities = ['High', 'Medium', 'Low'];
+const statuses  = ['Done', 'On Progress', 'Pending'];
+const picMap    = {
+  'Plumbing/Air':              'Teknisi',
+  'Listrik/Token':             'Teknisi',
+  'Teknis Unit':               'Teknisi',
+  'Fasilitas Umum':            'Teknisi',
+  'Kebersihan':                'Housekeeping',
+  'Keamanan/Kejadian':         'Security',
+  'Administrasi/Kartu Akses':  'Tenant Relation',
+  'Renovasi/Izin Kerja':       'Tenant Relation'
+};
+
+function uid() { return 'C-' + Math.random().toString(36).slice(2, 8).toUpperCase(); }
+function fmt(n) { return new Intl.NumberFormat('id-ID').format(n); }
+function pct(n) { return (Math.round(n * 100) / 100).toFixed(2) + '%'; }
+function safeDate(v) { if (!v) return null; const d = new Date(v); return isNaN(d) ? null : d; }
+function hoursDiff(a, b) { return (b - a) / 36e5; }
+
+// ============================================================
+// Sample data — distribusi merata di semua kategori & PIC
+// ============================================================
+function sampleData() {
+  const data = [];
+
+  // Jumlah kasus per kategori (total 290 kasus, 12 bulan, semua 8 kategori terisi)
+  const catConfig = [
+    { cat: 'Plumbing/Air',             pic: 'Teknisi',         priority: 'High',   count: 75 },
+    { cat: 'Listrik/Token',            pic: 'Teknisi',         priority: 'High',   count: 60 },
+    { cat: 'Teknis Unit',              pic: 'Teknisi',         priority: 'Medium', count: 48 },
+    { cat: 'Fasilitas Umum',           pic: 'Teknisi',         priority: 'Medium', count: 35 },
+    { cat: 'Kebersihan',               pic: 'Housekeeping',    priority: 'Low',    count: 28 },
+    { cat: 'Keamanan/Kejadian',        pic: 'Security',        priority: 'High',   count: 18 },
+    { cat: 'Administrasi/Kartu Akses', pic: 'Tenant Relation', priority: 'Low',    count: 16 },
+    { cat: 'Renovasi/Izin Kerja',      pic: 'Tenant Relation', priority: 'Medium', count: 10 },
+  ];
+
+  catConfig.forEach(({ cat, pic, priority, count }) => {
+    for (let i = 0; i < count; i++) {
+      // Sebar merata di 12 bulan
+      const mi  = i % 12;
+      const day = String((i % 27) + 1).padStart(2, '0');
+      const hr  = String(8 + (i % 9)).padStart(2, '0');
+      const mn  = String((i * 7) % 60).padStart(2, '0');
+      const inD = `2025-${String(mi + 1).padStart(2, '0')}-${day}T${hr}:${mn}:00`;
+
+      // Response time — sedikit bervariasi tapi dalam target SLA sebagian besar
+      const respMins = priority === 'High'
+        ? 10 + (i % 20)          // 10–29 menit (target < 30 menit)
+        : priority === 'Medium'
+          ? 20 + (i % 40)        // 20–59 menit (target < 60 menit)
+          : 40 + (i % 80);       // 40–119 menit (target < 120 menit)
+      const resp = new Date(new Date(inD).getTime() + respMins * 60000);
+
+      // Resolution time — sebagian dalam target, sebagian sedikit lewat
+      const resHours = priority === 'High'
+        ? 2 + (i % 22)           // 2–23 jam (target < 24 jam)
+        : priority === 'Medium'
+          ? 8 + (i % 64)         // 8–71 jam (target < 72 jam)
+          : 20 + (i % 100);      // 20–119 jam (target < 120 jam)
+      const done = new Date(new Date(inD).getTime() + resHours * 3600000);
+
+      // Status: ~87% Done, sisanya On Progress / Pending
+      const roll = i % 8;
+      const status = roll < 7 ? 'Done' : (roll === 7 ? 'On Progress' : 'Pending');
+
+      data.push({
+        id:        uid(),
+        entered:   inD,
+        responded: resp.toISOString(),
+        completed: status === 'Done' ? done.toISOString() : '',
+        category:  cat,
+        priority,
+        status,
+        pic
+      });
+    }
+  });
+
+  // Acak urutan agar tidak monoton di tabel
+  for (let i = data.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [data[i], data[j]] = [data[j], data[i]];
+  }
+
+  return data;
+}
+
+function loadState() {
+  let c = JSON.parse(localStorage.getItem(LS.complaints) || 'null');
+  if (!Array.isArray(c) || !c.length) {
+    c = sampleData();
+    localStorage.setItem(LS.complaints, JSON.stringify(c));
+  }
+  let fte = JSON.parse(localStorage.getItem(LS.fte) || 'null');
+  if (!fte) {
+    fte = { standardTime: 1.5, effectiveHours: 2000, currentWorkforce: 15 };
+    localStorage.setItem(LS.fte, JSON.stringify(fte));
+  }
+  return { complaints: c, fte };
+}
+
+let state = loadState();
+let ui    = { page: 'dashboard', q: '', filter: 'all', sort: 'entered_desc', modal: null, confirmModal: null, importModal: null, mobileMenuOpen: false };
+let charts = {};
+
+function persist() {
+  localStorage.setItem(LS.complaints, JSON.stringify(state.complaints));
+  localStorage.setItem(LS.fte, JSON.stringify(state.fte));
+  render();
+}
+function sessionUser() { return JSON.parse(localStorage.getItem(LS.session) || 'null'); }
+
+// ============================================================
+// Metrics & SLA — kalkulasi diperbaiki
+// ============================================================
+function metrics() {
+  const all  = state.complaints;
+  const total   = all.length;
+  const done    = all.filter(x => x.status === 'Done').length;
+  const onp     = all.filter(x => x.status === 'On Progress').length;
+  const pending = all.filter(x => x.status === 'Pending').length;
+  const open    = all.filter(x => x.status === 'Open').length;
+
+  const workload     = total * state.fte.standardTime;
+  const currentStaff = state.fte.currentWorkforce || 15;
+  const fte          = state.fte.effectiveHours > 0 ? workload / state.fte.effectiveHours : 0;
+  const fteGap       = fte - currentStaff;
+  const rec          = fteGap > 0 ? Math.ceil(fteGap) : 0;
+  const utilization  = currentStaff > 0 ? (fte / currentStaff) * 100 : 0;
+  const kpi          = total > 0 ? (done / total) * 100 : 0;
+  return { total, done, onp, pending, open, kpi, workload, fte, rec, currentStaff, fteGap, utilization };
+}
+
+function calcSLA() {
+  const rows = state.complaints.map(x => {
+    const enter = safeDate(x.entered);
+    const resp  = safeDate(x.responded);
+    const comp  = safeDate(x.completed);
+
+    const rt  = (resp  && enter) ? hoursDiff(enter, resp)  : null;
+    const res = (comp  && enter) ? hoursDiff(enter, comp)  : null;
+
+    const limit = x.priority === 'High'
+      ? { r: 0.5, s: 24  }
+      : x.priority === 'Medium'
+        ? { r: 1,   s: 72  }
+        : { r: 2,   s: 120 };
+
+    // Response OK: hanya jika ada waktu respon
+    const okResponse   = rt  != null && rt  <= limit.r;
+    // Resolution OK: hanya jika ada waktu selesai
+    const okResolution = res != null && res <= limit.s;
+    // Kepatuhan penuh: KEDUA harus terpenuhi
+    const ok = okResponse && okResolution;
+
+    return { ...x, rt, res, ok, okResponse, okResolution };
+  });
+
+  const calc      = rows.filter(x => x.rt != null || x.res != null);
+  const comp      = rows.filter(x => x.ok).length;
+  const rtRows    = rows.filter(x => x.rt  != null);
+  const resRows   = rows.filter(x => x.res != null);
+  const avgRt     = rtRows.length  ? rtRows.reduce((a, b) => a + b.rt,  0) / rtRows.length  : 0;
+  const avgRes    = resRows.length ? resRows.reduce((a, b) => a + b.res, 0) / resRows.length : 0;
+  const totalCalc = rows.length;
+
+  return {
+    rows,
+    averageResponse:   avgRt,
+    averageResolution: avgRes,
+    compliance: totalCalc > 0 ? (comp / totalCalc) * 100 : 0,
+    compliant: comp,
+    non: totalCalc - comp
+  };
+}
+
+// SLA per kuartal (untuk chart tren)
+function calcSLAByQuarter() {
+  const quarters = [
+    state.complaints.filter(x => { const m = new Date(x.entered).getMonth(); return m < 3; }),
+    state.complaints.filter(x => { const m = new Date(x.entered).getMonth(); return m >= 3 && m < 6; }),
+    state.complaints.filter(x => { const m = new Date(x.entered).getMonth(); return m >= 6 && m < 9; }),
+    state.complaints.filter(x => { const m = new Date(x.entered).getMonth(); return m >= 9; }),
+  ];
+
+  return quarters.map(qRows => {
+    if (!qRows.length) return 0;
+    const comp = qRows.filter(x => {
+      const enter = safeDate(x.entered);
+      const resp  = safeDate(x.responded);
+      const done  = safeDate(x.completed);
+      if (!enter) return false;
+      const rt  = resp ? hoursDiff(enter, resp) : null;
+      const res = done ? hoursDiff(enter, done) : null;
+      const limit = x.priority === 'High' ? { r: 0.5, s: 24 } : x.priority === 'Medium' ? { r: 1, s: 72 } : { r: 2, s: 120 };
+      return (rt != null && rt <= limit.r) && (res != null && res <= limit.s);
+    }).length;
+    return parseFloat(((comp / qRows.length) * 100).toFixed(2));
+  });
+}
+
+function filtered() {
+  let arr = [...state.complaints];
+  const q = ui.q.toLowerCase().trim();
+  if (q) arr = arr.filter(x =>
+    x.id.toLowerCase().includes(q) ||
+    x.category.toLowerCase().includes(q) ||
+    x.pic.toLowerCase().includes(q) ||
+    x.priority.toLowerCase().includes(q) ||
+    x.status.toLowerCase().includes(q)
+  );
+  if (ui.filter !== 'all') arr = arr.filter(x => x.status === ui.filter);
+  if (ui.sort === 'entered_desc') arr.sort((a, b) => new Date(b.entered) - new Date(a.entered));
+  else if (ui.sort === 'entered_asc') arr.sort((a, b) => new Date(a.entered) - new Date(b.entered));
+  return arr;
+}
+
+function badgeStatus(s) {
+  if (s === 'Done')        return 'border border-iris  text-iris  bg-transparent whitespace-nowrap';
+  if (s === 'On Progress') return 'border border-carbon text-carbon bg-transparent whitespace-nowrap';
+  if (s === 'Pending')     return 'border border-smoke  text-smoke  bg-transparent whitespace-nowrap';
+  return 'border border-ash text-ash bg-transparent whitespace-nowrap';
+}
+
+// ============================================================
+// PDF Print — buka window baru dengan HTML bersih, lalu print
+// ============================================================
+function buildPrintHTML(type) {
+  const m  = metrics();
+  const s  = calcSLA();
+  const now = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const typeLabels = { kpi: 'KPI Performance', sla: 'SLA Performance', fte: 'FTE Workload' };
+  const label = typeLabels[type] || 'Eksekutif';
+
+  // --- KPI section ---
+  const kpiRows = [
+    ['Customer', 'Tingkat Kepuasan Layanan', 'Skor Survey Bulanan', '>= 4.50 / 5.00'],
+    ['Customer', 'Kecepatan Follow-up Komplain', `Aktual: ${s.averageResponse.toFixed(2)} jam rata-rata`, '< 30 menit (0.5 jam)'],
+    ['Internal Process', 'Rata-rata Response Time', `Aktual: ${s.averageResponse.toFixed(2)} jam`, 'High < 0.5j / Med < 1j / Low < 2j'],
+    ['Internal Process', 'Rata-rata Resolution Time', `Aktual: ${s.averageResolution.toFixed(2)} jam`, 'High < 24j / Med < 72j / Low < 120j'],
+    ['Internal Process', 'Kepatuhan SLA Total', `Aktual: ${pct(s.compliance)}`, '> 90%'],
+    ['Internal Process', 'Tingkat Penyelesaian Kasus', `Aktual: ${pct(m.kpi)}`, '> 85%'],
+    ['Financial', 'Utilisasi FTE', `Aktual: ${m.utilization.toFixed(1)}%`, '80–100%'],
+    ['Learning & Growth', 'Kapasitas Workforce', `FTE ${m.fte.toFixed(2)} vs ${m.currentStaff} staf`, 'FTE ≤ Staf Aktual'],
+  ];
+
+  // --- Kategori breakdown ---
+  const catRows = categories.map(cat => {
+    const total = state.complaints.filter(x => x.category.trim() === cat).length;
+    const done  = state.complaints.filter(x => x.category.trim() === cat && x.status === 'Done').length;
+    const pctD  = total > 0 ? ((done / total) * 100).toFixed(1) + '%' : '-';
+    return `<tr><td>${cat}</td><td style="text-align:center">${total}</td><td style="text-align:center">${done}</td><td style="text-align:center">${pctD}</td></tr>`;
+  }).join('');
+
+  // --- SLA per PIC ---
+  const picRows = ['Teknisi', 'Housekeeping', 'Security', 'Tenant Relation'].map(p => {
+    const cnt  = state.complaints.filter(x => x.pic.trim() === p).length;
+    const done = state.complaints.filter(x => x.pic.trim() === p && x.status === 'Done').length;
+    const comp = s.rows.filter(x => x.pic.trim() === p && x.ok).length;
+    const pctC = cnt > 0 ? ((comp / cnt) * 100).toFixed(1) + '%' : '-';
+    return `<tr><td>${p}</td><td style="text-align:center">${cnt}</td><td style="text-align:center">${done}</td><td style="text-align:center">${pctC}</td></tr>`;
+  }).join('');
+
+  // --- FTE per PIC ---
+  const fteRows = ['Teknisi', 'Housekeeping', 'Security', 'Tenant Relation'].map(p => {
+    const cnt   = state.complaints.filter(x => x.pic.trim() === p).length;
+    const hours = (cnt * state.fte.standardTime).toFixed(1);
+    const ftePIC = state.fte.effectiveHours > 0 ? (cnt * state.fte.standardTime / state.fte.effectiveHours).toFixed(2) : '0.00';
+    return `<tr><td>${p}</td><td style="text-align:center">${cnt}</td><td style="text-align:center">${hours}</td><td style="text-align:center">${ftePIC}</td></tr>`;
+  }).join('');
+
+  const sharedStyle = `
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: Arial, sans-serif; font-size: 12px; color: #111; background: #fff; padding: 32px; }
+      h1 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+      h2 { font-size: 14px; font-weight: 700; margin: 24px 0 8px; text-transform: uppercase; letter-spacing: 0.06em; color: #333; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+      .subtitle { font-size: 11px; color: #555; margin-bottom: 2px; }
+      .date { font-size: 10px; color: #777; }
+      .header { text-align: center; border-bottom: 2px solid #111; padding-bottom: 16px; margin-bottom: 24px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 24px; }
+      .metric-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #eee; font-size: 12px; }
+      .metric-row .lbl { color: #555; }
+      .metric-row .val { font-weight: 700; color: #111; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
+      th { background: #f0f0f0; border: 1px solid #bbb; padding: 6px 8px; text-align: left; font-weight: 700; font-size: 10px; text-transform: uppercase; }
+      td { border: 1px solid #ddd; padding: 5px 8px; }
+      tr:nth-child(even) td { background: #fafafa; }
+      .note { border: 1px solid #ccc; border-radius: 4px; padding: 12px 16px; font-size: 11px; color: #444; line-height: 1.7; margin-top: 16px; background: #f9f9f9; }
+      .footer { margin-top: 32px; border-top: 1px solid #ccc; padding-top: 10px; font-size: 10px; color: #888; display: flex; justify-content: space-between; }
+      @page { size: A4; margin: 15mm; }
+      @media print { body { padding: 0; } }
+    </style>
+  `;
+
+  let body = '';
+
+  if (type === 'kpi') {
+    body = `
+      <div class="header">
+        <h1>LAPORAN KPI PERFORMANCE — MENARA SWASANA</h1>
+        <div class="subtitle">Balanced Scorecard — Sistem Manajemen Komplain Apartemen</div>
+        <div class="date">Tanggal Laporan: ${now}</div>
+      </div>
+
+      <h2>Ringkasan Metrik Utama</h2>
+      <div class="grid2">
+        <div>
+          <div class="metric-row"><span class="lbl">Total Kasus Terdaftar</span><span class="val">${m.total} kasus</span></div>
+          <div class="metric-row"><span class="lbl">Kasus Selesai (Done)</span><span class="val">${m.done} kasus</span></div>
+          <div class="metric-row"><span class="lbl">Tingkat Penyelesaian</span><span class="val">${pct(m.kpi)}</span></div>
+          <div class="metric-row"><span class="lbl">On Progress</span><span class="val">${m.onp} kasus</span></div>
+          <div class="metric-row"><span class="lbl">Pending</span><span class="val">${m.pending} kasus</span></div>
+        </div>
+        <div>
+          <div class="metric-row"><span class="lbl">Kepatuhan SLA</span><span class="val">${pct(s.compliance)}</span></div>
+          <div class="metric-row"><span class="lbl">Avg. Response Time</span><span class="val">${s.averageResponse.toFixed(2)} jam</span></div>
+          <div class="metric-row"><span class="lbl">Avg. Resolution Time</span><span class="val">${s.averageResolution.toFixed(2)} jam</span></div>
+          <div class="metric-row"><span class="lbl">FTE Index</span><span class="val">${m.fte.toFixed(2)}</span></div>
+          <div class="metric-row"><span class="lbl">Utilisasi Workforce</span><span class="val">${m.utilization.toFixed(1)}%</span></div>
+        </div>
+      </div>
+
+      <h2>KPI Balanced Scorecard</h2>
+      <table>
+        <thead><tr><th>Perspektif</th><th>Indikator KPI</th><th>Nilai Aktual</th><th>Target</th></tr></thead>
+        <tbody>
+          ${kpiRows.map(([p,k,v,t]) => `<tr><td>${p}</td><td>${k}</td><td>${v}</td><td>${t}</td></tr>`).join('')}
+        </tbody>
+      </table>
+
+      <h2>Distribusi Komplain per Kategori</h2>
+      <table>
+        <thead><tr><th>Kategori</th><th style="text-align:center">Total</th><th style="text-align:center">Selesai</th><th style="text-align:center">% Selesai</th></tr></thead>
+        <tbody>${catRows}</tbody>
+      </table>
+
+      <div class="note">
+        <strong>Catatan Evaluasi:</strong> Total komplain terdaftar sebanyak <strong>${m.total} kasus</strong> dengan tingkat penyelesaian <strong>${pct(m.kpi)}</strong>. 
+        Kepatuhan SLA tercatat <strong>${pct(s.compliance)}</strong>. 
+        ${m.rec > 0 ? `Disarankan penambahan <strong>${m.rec} staf</strong> untuk mencukupi kebutuhan operasional (utilisasi ${m.utilization.toFixed(1)}%).` : `Kapasitas workforce dinilai memadai (utilisasi ${m.utilization.toFixed(1)}%).`}
+      </div>
+    `;
+
+  } else if (type === 'sla') {
+    const qSLA = calcSLAByQuarter();
+    body = `
+      <div class="header">
+        <h1>LAPORAN SLA PERFORMANCE — MENARA SWASANA</h1>
+        <div class="subtitle">Analisis Service Level Agreement — Sistem Manajemen Komplain</div>
+        <div class="date">Tanggal Laporan: ${now}</div>
+      </div>
+
+      <h2>Ringkasan SLA</h2>
+      <div class="grid2">
+        <div>
+          <div class="metric-row"><span class="lbl">Total Kasus</span><span class="val">${state.complaints.length}</span></div>
+          <div class="metric-row"><span class="lbl">Kasus Patuh SLA</span><span class="val">${s.compliant}</span></div>
+          <div class="metric-row"><span class="lbl">Kasus Melanggar SLA</span><span class="val">${s.non}</span></div>
+          <div class="metric-row"><span class="lbl">Kepatuhan SLA Total</span><span class="val">${pct(s.compliance)}</span></div>
+        </div>
+        <div>
+          <div class="metric-row"><span class="lbl">Avg. Response Time</span><span class="val">${s.averageResponse.toFixed(2)} jam</span></div>
+          <div class="metric-row"><span class="lbl">Target Response (High)</span><span class="val">&lt; 0.5 jam</span></div>
+          <div class="metric-row"><span class="lbl">Avg. Resolution Time</span><span class="val">${s.averageResolution.toFixed(2)} jam</span></div>
+          <div class="metric-row"><span class="lbl">Target Resolution (High)</span><span class="val">&lt; 24 jam</span></div>
+        </div>
+      </div>
+
+      <h2>SLA Target per Tingkat Prioritas</h2>
+      <table>
+        <thead><tr><th>Prioritas</th><th>Target Response</th><th>Target Resolution</th><th>Keterangan</th></tr></thead>
+        <tbody>
+          <tr><td>High</td><td>&lt; 30 menit (0.5 jam)</td><td>&lt; 24 jam</td><td>Kerusakan kritis / darurat</td></tr>
+          <tr><td>Medium</td><td>&lt; 1 jam</td><td>&lt; 72 jam</td><td>Gangguan signifikan</td></tr>
+          <tr><td>Low</td><td>&lt; 2 jam</td><td>&lt; 120 jam</td><td>Permintaan umum</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Kepatuhan SLA per Kuartal</h2>
+      <table>
+        <thead><tr><th>Kuartal</th><th style="text-align:center">Kepatuhan SLA</th><th style="text-align:center">Target</th><th>Status</th></tr></thead>
+        <tbody>
+          ${['Q1 (Jan–Mar)','Q2 (Apr–Jun)','Q3 (Jul–Sep)','Q4 (Okt–Des)'].map((q, i) => {
+            const v = qSLA[i];
+            const ok = v >= 90;
+            return `<tr><td>${q}</td><td style="text-align:center">${v.toFixed(2)}%</td><td style="text-align:center">&gt; 90%</td><td style="color:${ok?'#166534':'#991b1b'}">${ok ? '✓ Tercapai' : '✗ Belum Tercapai'}</td></tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+
+      <h2>Kepatuhan SLA per Divisi PIC</h2>
+      <table>
+        <thead><tr><th>PIC / Divisi</th><th style="text-align:center">Total Kasus</th><th style="text-align:center">Selesai</th><th style="text-align:center">% Patuh SLA</th></tr></thead>
+        <tbody>${picRows}</tbody>
+      </table>
+
+      <div class="note">
+        <strong>Catatan Evaluasi:</strong> Rata-rata waktu respon sebesar <strong>${s.averageResponse.toFixed(2)} jam</strong> dan rata-rata waktu penyelesaian <strong>${s.averageResolution.toFixed(2)} jam</strong>. 
+        Kepatuhan SLA total tercatat <strong>${pct(s.compliance)}</strong> (target &gt; 90%).
+        ${s.compliance >= 90 ? 'Performa SLA memenuhi target.' : 'Perlu peningkatan kecepatan penanganan untuk mencapai target SLA.'}
+      </div>
+    `;
+
+  } else if (type === 'fte') {
+    body = `
+      <div class="header">
+        <h1>LAPORAN FTE WORKLOAD — MENARA SWASANA</h1>
+        <div class="subtitle">Analisis Kapasitas Tenaga Kerja (Full Time Equivalent)</div>
+        <div class="date">Tanggal Laporan: ${now}</div>
+      </div>
+
+      <h2>Parameter & Hasil Kalkulasi FTE</h2>
+      <div class="grid2">
+        <div>
+          <div class="metric-row"><span class="lbl">Total Komplain (beban)</span><span class="val">${m.total} kasus</span></div>
+          <div class="metric-row"><span class="lbl">Standard Handling Time</span><span class="val">${state.fte.standardTime} jam/kasus</span></div>
+          <div class="metric-row"><span class="lbl">Total Jam Kerja Terhitung</span><span class="val">${m.workload.toFixed(1)} jam</span></div>
+          <div class="metric-row"><span class="lbl">Jam Kerja Efektif / Staf</span><span class="val">${state.fte.effectiveHours} jam/periode</span></div>
+        </div>
+        <div>
+          <div class="metric-row"><span class="lbl">FTE Index (Kebutuhan Ideal)</span><span class="val">${m.fte.toFixed(2)}</span></div>
+          <div class="metric-row"><span class="lbl">Staf Aktual Saat Ini</span><span class="val">${m.currentStaff} orang</span></div>
+          <div class="metric-row"><span class="lbl">Gap FTE</span><span class="val">${m.fteGap > 0 ? '+' : ''}${m.fteGap.toFixed(2)} (${m.fteGap > 0 ? 'defisit' : 'surplus'})</span></div>
+          <div class="metric-row"><span class="lbl">Utilisasi Workforce</span><span class="val">${m.utilization.toFixed(1)}% (${m.utilization > 100 ? 'OVERLOAD' : m.utilization < 80 ? 'UNDERLOAD' : 'OPTIMAL'})</span></div>
+        </div>
+      </div>
+
+      <h2>Formula Kalkulasi FTE</h2>
+      <table>
+        <thead><tr><th>Komponen</th><th>Nilai</th><th>Keterangan</th></tr></thead>
+        <tbody>
+          <tr><td>Total Beban Kerja</td><td>${m.total} kasus × ${state.fte.standardTime} jam</td><td>= ${m.workload.toFixed(1)} jam total</td></tr>
+          <tr><td>Jam Kerja Efektif per Staf</td><td>${state.fte.effectiveHours} jam</td><td>Per periode (semua divisi)</td></tr>
+          <tr><td>FTE Kebutuhan</td><td>${m.workload.toFixed(1)} ÷ ${state.fte.effectiveHours}</td><td>= ${m.fte.toFixed(2)} FTE</td></tr>
+          <tr><td>Gap / Kelebihan</td><td>${m.fte.toFixed(2)} − ${m.currentStaff}</td><td>= ${m.fteGap.toFixed(2)} ${m.fteGap > 0 ? '(kekurangan)' : '(kelebihan)'}</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Beban Kerja per Divisi PIC</h2>
+      <table>
+        <thead><tr><th>Divisi / PIC</th><th style="text-align:center">Jumlah Kasus</th><th style="text-align:center">Jam Kerja (Est.)</th><th style="text-align:center">FTE per Divisi</th></tr></thead>
+        <tbody>${fteRows}</tbody>
+      </table>
+
+      <h2>Rekomendasi</h2>
+      <table>
+        <thead><tr><th>Aspek</th><th>Kondisi Saat Ini</th><th>Rekomendasi</th></tr></thead>
+        <tbody>
+          <tr><td>Kebutuhan Staff</td><td>FTE ${m.fte.toFixed(2)} vs ${m.currentStaff} aktual</td><td>${m.rec > 0 ? `Tambah ${m.rec} staf` : 'Kapasitas sudah cukup'}</td></tr>
+          <tr><td>Utilisasi</td><td>${m.utilization.toFixed(1)}%</td><td>${m.utilization > 100 ? 'Segera rekrut staf tambahan' : m.utilization < 80 ? 'Pertimbangkan redistribusi tugas' : 'Pertahankan kapasitas saat ini'}</td></tr>
+          <tr><td>Standard Handling Time</td><td>${state.fte.standardTime} jam/kasus</td><td>Evaluasi ulang jika beban meningkat &gt; 20%</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note">
+        <strong>Catatan Evaluasi:</strong> Berdasarkan ${m.total} kasus dengan handling time ${state.fte.standardTime} jam/kasus, total beban kerja adalah <strong>${m.workload.toFixed(1)} jam</strong>. 
+        Dengan jam efektif ${state.fte.effectiveHours} jam/orang, dibutuhkan <strong>${m.fte.toFixed(2)} FTE</strong> versus staf aktual <strong>${m.currentStaff} orang</strong>.
+        ${m.rec > 0 ? `Direkomendasikan penambahan <strong>${m.rec} staf</strong>.` : 'Kapasitas tenaga kerja saat ini mencukupi.'}
+      </div>
+    `;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Laporan ${label} — Menara Swasana</title>
+  ${sharedStyle}
+</head>
+<body>
+  ${body}
+  <div class="footer">
+    <span>Menara Swasana Management System</span>
+    <span>Digenerate: ${now}</span>
+  </div>
+  <script>window.onload = function() { window.print(); }<\/script>
+</body>
+</html>`;
+}
+
+function triggerPrint(type) {
+  const html = buildPrintHTML(type);
+  const win  = window.open('', '_blank', 'width=900,height=700');
+  if (!win) { toast('Pop-up diblokir browser. Izinkan pop-up untuk mencetak.'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+// ============================================================
+// Excel Export untuk Eksekutif Report
+// ============================================================
+function exportReportExcel(type) {
+  const m = metrics();
+  const s = calcSLA();
+  const now = new Date().toLocaleDateString('id-ID');
+  const wb = XLSX.utils.book_new();
+
+  if (type === 'kpi') {
+    // Sheet 1: Ringkasan KPI
+    const kpiData = [
+      ['LAPORAN KPI MENARA SWASANA', '', '', ''],
+      ['Tanggal Laporan:', now, '', ''],
+      ['', '', '', ''],
+      ['PERSPEKTIF', 'INDIKATOR KPI', 'FORMULASI / NILAI AKTUAL', 'TARGET'],
+      ['Customer', 'Kecepatan Follow-up Komplain', `${s.averageResponse.toFixed(2)} jam rata-rata respon`, '< 30 menit'],
+      ['Internal Process', 'Rata-rata Response Time', `${s.averageResponse.toFixed(2)} jam`, 'High < 0.5j, Med < 1j'],
+      ['Internal Process', 'Rata-rata Resolution Time', `${s.averageResolution.toFixed(2)} jam`, 'High < 24j, Med < 72j'],
+      ['Internal Process', 'Kepatuhan SLA', `${pct(s.compliance)}`, '> 90%'],
+      ['Internal Process', 'Tingkat Penyelesaian Kasus', `${pct(m.kpi)}`, '> 85%'],
+      ['Financial', 'Efisiensi FTE', `${m.utilization.toFixed(1)}% utilisasi`, '80-100%'],
+      ['Learning & Growth', 'Kapasitas Workforce', `${m.currentStaff} staf aktual vs ${m.fte.toFixed(2)} FTE kebutuhan`, 'FTE ≤ Staff Aktual'],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(kpiData), 'KPI Report');
+
+  } else if (type === 'sla') {
+    // Sheet 1: Summary SLA
+    const slaSum = [
+      ['LAPORAN ANALISIS SLA MENARA SWASANA', '', ''],
+      ['Tanggal Laporan:', now, ''],
+      ['', '', ''],
+      ['METRIK', 'NILAI AKTUAL', 'TARGET'],
+      ['Rata-rata Response Time', `${s.averageResponse.toFixed(2)} jam`, 'High < 0.5j, Med < 1j, Low < 2j'],
+      ['Rata-rata Resolution Time', `${s.averageResolution.toFixed(2)} jam`, 'High < 24j, Med < 72j, Low < 120j'],
+      ['Kepatuhan SLA (Compliance)', `${pct(s.compliance)}`, '> 90%'],
+      ['Kasus Patuh SLA', s.compliant, ''],
+      ['Kasus Melanggar SLA', s.non, ''],
+      ['Total Kasus', state.complaints.length, ''],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(slaSum), 'Ringkasan SLA');
+
+    // Sheet 2: Data per kasus
+    const slaDetail = [
+      ['ID Komplain', 'Tanggal Masuk', 'Kategori', 'Prioritas', 'Status', 'PIC', 'Response Time (jam)', 'Resolution Time (jam)', 'Patuh SLA?']
+    ];
+    s.rows.forEach(x => {
+      slaDetail.push([
+        x.id,
+        new Date(x.entered).toLocaleString('id-ID'),
+        x.category,
+        x.priority,
+        x.status,
+        x.pic,
+        x.rt  != null ? x.rt.toFixed(2)  : '-',
+        x.res != null ? x.res.toFixed(2) : '-',
+        x.ok ? 'YA' : 'TIDAK'
+      ]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(slaDetail), 'Detail SLA per Kasus');
+
+  } else if (type === 'fte') {
+    // Sheet 1: FTE Summary
+    const fteData = [
+      ['LAPORAN ANALISIS FTE MENARA SWASANA', '', ''],
+      ['Tanggal Laporan:', now, ''],
+      ['', '', ''],
+      ['PARAMETER', 'NILAI', 'KETERANGAN'],
+      ['Total Komplain', m.total, 'Semua komplain terdaftar'],
+      ['Standard Handling Time', `${state.fte.standardTime} jam`, 'Per komplain'],
+      ['Total Jam Kerja Terhitung', `${m.workload.toFixed(1)} jam`, 'Total × handling time'],
+      ['Jam Kerja Efektif per Staf', `${state.fte.effectiveHours} jam`, 'Per periode'],
+      ['FTE Kebutuhan Ideal', m.fte.toFixed(2), 'Beban ÷ jam efektif'],
+      ['Staf Aktual Saat Ini', m.currentStaff, 'Orang'],
+      ['Gap FTE', m.fteGap.toFixed(2), m.fteGap > 0 ? 'Defisit' : 'Surplus'],
+      ['Utilisasi Workforce', `${m.utilization.toFixed(1)}%`, m.utilization > 100 ? 'OVERLOAD' : m.utilization < 80 ? 'UNDERLOAD' : 'OPTIMAL'],
+      ['Rekomendasi', m.rec > 0 ? `Tambah ${m.rec} staf` : 'Kapasitas Cukup', ''],
+      ['', '', ''],
+      ['BEBAN PER PIC', 'JUMLAH KOMPLAIN', 'JAM KERJA (Est.)'],
+      ...['Teknisi', 'Tenant Relation', 'Housekeeping', 'Security'].map(p => {
+        const cnt = state.complaints.filter(x => x.pic === p).length;
+        return [p, cnt, (cnt * state.fte.standardTime).toFixed(1)];
+      })
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fteData), 'FTE Report');
+  }
+
+  const fname = { kpi: 'Laporan_KPI', sla: 'Laporan_SLA', fte: 'Laporan_FTE' }[type];
+  XLSX.writeFile(wb, `${fname}_Menara_Swasana_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast(`Laporan ${fname.replace('_',' ')} berhasil diunduh.`);
+}
+
+// ============================================================
+// Views
+// ============================================================
+function loginView() {
+  return `
+  <div class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-[1280px] grid lg:grid-cols-2 gap-16 lg:gap-24 items-center mx-auto">
+      <div class="flex flex-col text-left">
+        <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-6">Menara Swasana Resident Portal</div>
+        <h1 class="text-[48px] lg:text-[80px] font-bold leading-[0.96] tracking-display text-carbon mb-8">Dashboard Pemantauan Kinerja Pusat</h1>
+        <p class="text-[18px] text-smoke leading-[1.30] max-w-[560px] mb-10">Dashboard pengelola apartemen untuk optimasi SLA, rekayasa beban kerja FTE, serta monitoring komplain real-time.</p>
+      </div>
+      <div class="bg-graphite border border-twilight rounded-[10px] p-8 lg:p-12 shadow-mockup relative">
+        <div class="absolute top-4 left-4 right-4 flex justify-between items-center opacity-40 border-b border-charcoal pb-4 mb-8">
+          <div class="flex gap-2"><div class="w-2.5 h-2.5 rounded-full bg-smoke"></div><div class="w-2.5 h-2.5 rounded-full bg-smoke"></div><div class="w-2.5 h-2.5 rounded-full bg-smoke"></div></div>
+          <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke">Otentikasi</div>
+        </div>
+        <div class="mt-8">
+          <div class="mb-8">
+            <h2 class="text-[24px] font-normal tracking-headingsm text-carbon">Selamat Datang</h2>
+            <p class="text-xs text-smoke mt-1">Gunakan kredensial pengelola di bawah untuk mengakses sistem.</p>
+          </div>
+          <form id="loginForm" class="space-y-6">
+            <div>
+              <label class="text-[12px] text-ash mb-2 block font-normal">Email</label>
+              <input name="email" type="email" placeholder="Masukkan email Anda"
+                class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-[14px] text-carbon focus:outline-none focus:border-iris transition-colors" />
+            </div>
+            <div>
+              <label class="text-[12px] text-ash mb-2 block font-normal">Password</label>
+              <div class="relative">
+                <input id="pwd" type="password" name="password" placeholder="Masukkan Password Anda"
+                  class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-[14px] text-carbon focus:outline-none focus:border-iris transition-colors pr-16"/>
+                <button type="button" id="togglePwd" class="absolute right-3 top-3.5 px-2 py-0.5 text-[10px] uppercase font-bold rounded bg-charcoal text-smoke hover:text-carbon">Show</button>
+              </div>
+            </div>
+            <div class="flex items-center justify-between text-xs py-1">
+              <label class="flex items-center gap-2 text-smoke"><input type="checkbox" name="remember" checked class="accent-iris" /> Ingat saya</label>
+              <span id="loginMsg" class="text-smoke">Demo: admin@gmail.com / 123</span>
+            </div>
+            <button class="w-full bg-carbon text-pitch rounded-full px-5 py-3.5 font-medium hover:bg-specter transition-colors text-[14px] mt-4">Masuk Dashboard</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function topbar() {
+  return `
+  <header class="sticky top-0 z-40 bg-void/90 backdrop-blur-md border-b border-charcoal h-[64px] flex items-center justify-between px-6 shrink-0">
+    <div class="flex items-center gap-6">
+      <button id="mobileMenuBtn" class="xl:hidden text-ash hover:text-carbon transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+      </button>
+      <div class="font-mono text-[12px] uppercase tracking-eyebrow text-smoke hidden md:block">${ui.page.replace(/_/g, ' ')}</div>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="w-2 h-2 rounded-full bg-iris"></span>
+      <span class="text-[14px] text-carbon">Administrator</span>
+    </div>
+  </header>`;
+}
+
+function sidebar() {
+  const items = [
+    ['dashboard','Dashboard'],
+    ['complaints','Data Komplain'],
+    ['kpi','KPI Balanced'],
+    ['sla','Analisis SLA'],
+    ['fte','Analisis FTE'],
+    ['report','Eksekutif Report']
+  ];
+  return `
+  <aside class="w-[240px] bg-void border-r border-charcoal hidden xl:flex flex-col shrink-0">
+    <div class="h-[64px] flex items-center px-6 border-b border-charcoal">
+      <div class="font-bold text-[16px] text-carbon tracking-body">Menara Swasana<span class="text-iris"> Portal</span></div>
+    </div>
+    <nav class="flex-1 py-6 flex flex-col gap-1 px-4 overflow-y-auto">
+      ${items.map(([k,t]) => `
+        <button data-nav="${k}" class="w-full text-left px-3 py-2 text-[14px] font-normal transition-colors relative group ${ui.page===k?'text-iris font-semibold':'text-ash hover:text-carbon'}">
+          ${t}
+          <div class="absolute left-0 bottom-0 w-0 h-[1px] bg-carbon transition-all duration-300 ${ui.page===k?'w-0':'group-hover:w-8'}"></div>
+        </button>
+      `).join('')}
+    </nav>
+    <div class="p-4 border-t border-charcoal space-y-1">
+      <button data-nav="logout" class="w-full text-left px-3 py-2 text-[14px] font-normal text-ash hover:text-carbon transition-colors group relative">
+        Log out
+        <div class="absolute left-0 bottom-0 w-0 h-[1px] bg-carbon transition-all duration-300 group-hover:w-8"></div>
+      </button>
+      <button id="resetDataBtn" class="w-full text-left px-3 py-2 text-[11px] font-normal text-smoke hover:text-ash transition-colors">
+        ↺ Reset Data Sample
+      </button>
+    </div>
+  </aside>
+  ${ui.mobileMenuOpen ? `
+  <div class="fixed inset-0 z-50 bg-obsidian/90 backdrop-blur-sm xl:hidden" id="mobileDrawerBackdrop">
+    <div class="absolute left-0 top-0 bottom-0 w-[240px] bg-void border-r border-charcoal flex flex-col" id="mobileDrawer">
+      <div class="h-[64px] flex items-center justify-between px-6 border-b border-charcoal">
+        <div class="font-bold text-[16px] text-carbon tracking-body">SWASANA<span class="text-iris">.IO</span></div>
+        <button id="closeMobileMenu" class="text-ash hover:text-carbon text-lg">✕</button>
+      </div>
+      <nav class="flex-1 py-6 flex flex-col gap-1 px-4 overflow-y-auto">
+        ${items.map(([k,t]) => `
+          <button data-nav="${k}" class="w-full text-left px-3 py-2 text-[14px] font-normal transition-colors ${ui.page===k?'text-iris font-semibold':'text-ash'}">${t}</button>
+        `).join('')}
+      </nav>
+      <div class="p-4 border-t border-charcoal">
+        <button data-nav="logout" class="w-full text-left px-3 py-2 text-[14px] font-normal text-ash">Log out</button>
+      </div>
+    </div>
+  </div>` : ''}`;
+}
+
+function shell(content) {
+  return `
+  <div class="flex flex-1 overflow-hidden">
+    ${sidebar()}
+    <div class="flex-1 flex flex-col min-w-0">
+      ${topbar()}
+      <div class="flex-1 overflow-y-auto p-6 md:p-12 max-w-[1280px] mx-auto w-full space-y-20">
+        ${content}
+      </div>
+    </div>
+  </div>
+  ${ui.modal || ''}
+  ${ui.confirmModal ? confirmModalTemplate() : ''}
+  ${ui.importModal  ? importModalTemplate()  : ''}
+  <div id="toastWrap" class="fixed bottom-6 right-6 z-50 space-y-2"></div>`;
+}
+
+function chartContainer(id, title, subtitle, heightPx = 280) {
+  return `
+  <div class="flex flex-col">
+    <div class="mb-4">
+      <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-1">${title}</div>
+      <div class="text-[14px] text-smoke">${subtitle}</div>
+    </div>
+    <div class="bg-graphite border border-charcoal rounded-[10px] p-6 shadow-mockup">
+      <div style="position:relative;width:100%;height:${heightPx}px;">
+        <canvas id="${id}"></canvas>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ============================================================
+// Dashboard View
+// ============================================================
+function dashboardView() {
+  const m = metrics();
+  const s = calcSLA();
+  return `
+  <section>
+    <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-4">RINGKASAN PLATFORM</div>
+    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Performa sistem dalam satu dashboard</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      ${[
+        ['Total Komplain',  fmt(m.total),            'Seluruh log masuk'],
+        ['Selesai',         fmt(m.done),              'Status Done'],
+        ['SLA Compliance',  pct(s.compliance),        'Response & Resolution'],
+        ['FTE Value',       m.fte.toFixed(2),         m.utilization > 100 ? 'Overloaded' : 'Normal Load']
+      ].map(([label,val,desc]) => `
+        <div class="bg-graphite border border-charcoal rounded-[10px] p-6 shadow-mockup flex flex-col justify-between">
+          <div class="font-mono text-[12px] uppercase tracking-eyebrow text-smoke mb-4">${label}</div>
+          <div class="text-[38px] font-normal tracking-heading text-carbon leading-[1.04] mb-2">${val}</div>
+          <div class="text-[14px] text-ash">${desc}</div>
+        </div>
+      `).join('')}
+    </div>
+  </section>
+
+  <section>
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+      <div class="xl:col-span-2 flex flex-col gap-8">
+        ${chartContainer('monthlyTrend','Tren Masuk Komplain Bulanan','Volume Aliran', 260)}
+        ${chartContainer('workloadStack','Beban Kerja Berdasarkan PIC (Jam Kerja)','Waktu aktif dan selesai berdasarkan divisi lapangan.', 260)}
+      </div>
+      <div class="flex flex-col gap-8">
+        <div class="flex flex-col">
+          <div class="mb-4">
+            <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-1">LIVE STATUS WATCH</div>
+            <div class="text-[14px] text-smoke">Metrik tunggakan (backlog) saat ini.</div>
+          </div>
+          <div class="bg-graphite border border-twilight rounded-[10px] p-6 shadow-mockup flex flex-col flex-1">
+            <div class="space-y-4 flex-1">
+              <div class="flex justify-between items-center border-b border-charcoal pb-4">
+                <span class="text-[14px] text-ash">Total Komplain</span>
+                <span class="text-[22px] tracking-headingsm font-normal text-carbon">${m.total}</span>
+              </div>
+              <div class="flex justify-between items-center border-b border-charcoal pb-4">
+                <span class="text-[14px] text-ash">Aktif (Open/On Progress)</span>
+                <span class="text-[22px] tracking-headingsm font-normal text-carbon">${m.open + m.onp}</span>
+              </div>
+              <div class="flex justify-between items-center border-b border-charcoal pb-4">
+                <span class="text-[14px] text-ash">Pending (Terhambat)</span>
+                <span class="text-[22px] tracking-headingsm font-normal text-carbon">${m.pending}</span>
+              </div>
+              <div class="flex justify-between items-center pb-4">
+                <span class="text-[14px] text-ash">Rekomendasi Tambahan Staff</span>
+                <span class="text-[13px] font-mono tracking-eyebrow text-iris uppercase">${m.rec > 0 ? `${m.rec} Staff` : 'Kapasitas Cukup'}</span>
+              </div>
+            </div>
+            <div class="mt-6 pt-4 border-t border-charcoal">
+              <button data-nav="complaints" class="w-full bg-transparent border border-carbon text-carbon rounded-full px-5 py-3 font-medium hover:bg-carbon hover:text-pitch transition-all text-[14px]">
+                Kelola Seluruh Komplain
+              </button>
+            </div>
+          </div>
+        </div>
+        ${chartContainer('categoryPie','Distribusi Kategori Komplain','Rasio jenis pengaduan.', 220)}
+      </div>
+    </div>
+  </section>`;
+}
+
+function complaintsView() {
+  const arr = filtered();
+  return `
+  <section>
+    <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-4">DIREKTORI DATA</div>
+    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Database laporan komplain</h2>
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-8 border-b border-charcoal mb-8">
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="bg-void border border-charcoal rounded-full p-1 flex items-center gap-1">
+          ${['all','Done','On Progress','Pending'].map(s => {
+            const isActive = ui.filter === s;
+            return `<button data-filter="${s}" class="px-4 py-1.5 rounded-full text-[12px] font-medium transition-all ${isActive?'bg-charcoal text-carbon font-semibold':'text-ash hover:text-carbon'}">${s==='all'?'Semua':s}</button>`;
+          }).join('')}
+        </div>
+        <div class="relative flex items-center bg-void border border-charcoal rounded-full px-4 py-1.5 w-full sm:w-60 focus-within:border-iris transition-colors">
+          <svg class="w-3.5 h-3.5 text-smoke shrink-0 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+          <input id="searchBox" value="${ui.q}" placeholder="Cari komplain..." class="bg-transparent border-none text-[12px] text-carbon placeholder:text-smoke w-full focus:outline-none" />
+        </div>
+        <div class="bg-void border border-charcoal rounded-full px-4 py-1.5 flex items-center gap-2 h-[34px]">
+          <span class="text-[11px] font-mono uppercase tracking-eyebrow text-smoke">Urutkan:</span>
+          <select id="sortBox" class="bg-transparent border-none text-[12px] text-carbon font-medium focus:outline-none cursor-pointer pr-1">
+            <option value="entered_desc" ${ui.sort==='entered_desc'?'selected':''} class="bg-graphite text-carbon">Terbaru</option>
+            <option value="entered_asc"  ${ui.sort==='entered_asc'?'selected':''}  class="bg-graphite text-carbon">Terlama</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 w-full lg:w-auto lg:justify-end shrink-0">
+        <button data-action="add" class="flex-1 lg:flex-initial bg-carbon text-pitch rounded-full px-6 py-2.5 font-medium hover:bg-specter transition-colors text-[13px] whitespace-nowrap">Tambah Baru</button>
+        <button data-action="import" class="flex-1 lg:flex-initial bg-transparent border border-carbon text-carbon hover:bg-carbon hover:text-pitch rounded-full px-5 py-2.5 font-medium transition-colors text-[13px] whitespace-nowrap">Import Excel</button>
+        <button id="exportExcelBtn" class="flex-1 lg:flex-initial bg-transparent border border-carbon text-carbon hover:bg-carbon hover:text-pitch rounded-full px-5 py-2.5 font-medium transition-colors text-[13px] whitespace-nowrap">Export Excel</button>
+      </div>
+    </div>
+    <div class="bg-graphite border border-charcoal rounded-[10px] shadow-mockup overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-[14px] text-left border-collapse">
+          <thead>
+            <tr class="border-b border-charcoal bg-void/50">
+              <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal">ID</th>
+              <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal">Tanggal</th>
+              <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal">Kategori</th>
+              <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal">Prioritas</th>
+              <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal min-w-[150px]">Status</th>
+              <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal">PIC</th>
+              <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal text-right">Aksi</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-charcoal">
+            ${arr.map(x => `
+              <tr class="hover:bg-void transition-colors">
+                <td class="py-4 px-6 font-mono text-carbon text-[13px]">${x.id}</td>
+                <td class="py-4 px-6 text-ash">${new Date(x.entered).toLocaleDateString('id-ID')} ${new Date(x.entered).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}</td>
+                <td class="py-4 px-6 text-carbon">${x.category}</td>
+                <td class="py-4 px-6 text-smoke">${x.priority}</td>
+                <td class="py-4 px-6 min-w-[150px] whitespace-nowrap"><span class="px-2.5 py-1 rounded-[4px] text-[12px] inline-block ${badgeStatus(x.status)}">${x.status}</span></td>
+                <td class="py-4 px-6 text-ash">${x.pic}</td>
+                <td class="py-4 px-6 text-right space-x-3">
+                  <button data-edit="${x.id}" class="text-ash hover:text-carbon underline underline-offset-4 transition-colors">Ubah</button>
+                  <button data-del="${x.id}"  class="text-smoke hover:text-carbon underline underline-offset-4 transition-colors">Hapus</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>`;
+}
+
+function kpiView() {
+  const s = calcSLA();
+  const m = metrics();
+  const rows = [
+    ['Customer Perspective','Tingkat kepuasan layanan komplain','Skor survey bulanan / total responden','>= 4.50 / 5.00','Survey Tenant','Tenant Relation'],
+    ['Customer Perspective','Kecepatan follow-up komplain masuk',`Rerata waktu respon: ${s.averageResponse.toFixed(2)} jam`,'< 30 menit','Form Respon','Tenant Relation'],
+    ['Internal Process','Rata-rata Response Time',`Aktual: ${s.averageResponse.toFixed(2)} jam`,'High < 0.5j / Med < 1j','Log Komplain','Teknisi / PIC'],
+    ['Internal Process','Rata-rata Resolution Time',`Aktual: ${s.averageResolution.toFixed(2)} jam`,'High < 24j / Med < 72j','Log Komplain','Teknisi / PIC'],
+    ['Internal Process','Kepatuhan Target SLA',`Aktual: ${pct(s.compliance)}`,'> 90%','Log Komplain','Tenant Relation'],
+    ['Learning & Growth','Efisiensi Kapasitas Tenaga Kerja',`FTE ${m.fte.toFixed(2)} vs ${m.currentStaff} staf aktual`,'FTE ≤ Staff Aktual','Data HR','Pengelola Swasana'],
+  ];
+  return `
+  <section>
+    <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-4">BALANCED SCORECARD</div>
+    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Target Kinerja (KPI) Terstruktur.</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      ${rows.map(([persp,kpi,formula,target,source,pic]) => `
+        <div class="bg-transparent border-t border-charcoal pt-6 flex flex-col h-full">
+          <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">${persp}</div>
+          <h3 class="text-[24px] font-normal tracking-headingsm text-carbon mb-4 leading-tight">${kpi}</h3>
+          <div class="text-[14px] text-ash space-y-2 mb-6 flex-1">
+            <div>Metrik: ${formula}</div>
+            <div>Sumber: ${source}</div>
+            <div>PIC: ${pic}</div>
+          </div>
+          <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mt-auto pt-4 border-t border-charcoal">Target: ${target}</div>
+        </div>
+      `).join('')}
+    </div>
+  </section>`;
+}
+
+function slaView() {
+  const s = calcSLA();
+  return `
+  <section>
+    <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-4">ANALISIS SERVICE LEVEL AGREEMENT</div>
+    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Ketepatan waktu SLA.</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
+      <div class="bg-transparent border-t border-charcoal pt-6">
+        <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">Rata-rata Response Time</div>
+        <div class="text-[48px] font-normal tracking-headinglg text-carbon leading-none mb-2">${s.averageResponse.toFixed(2)} jam</div>
+        <div class="text-[14px] text-ash">SLA Target: High &lt; 30m, Medium &lt; 1h</div>
+      </div>
+      <div class="bg-transparent border-t border-charcoal pt-6">
+        <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">Rata-rata Resolution Time</div>
+        <div class="text-[48px] font-normal tracking-headinglg text-carbon leading-none mb-2">${s.averageResolution.toFixed(2)} jam</div>
+        <div class="text-[14px] text-ash">SLA Target: High &lt; 24h, Med &lt; 72h</div>
+      </div>
+      <div class="bg-transparent border-t border-charcoal pt-6">
+        <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">Kepatuhan Total SLA</div>
+        <div class="text-[48px] font-normal tracking-headinglg text-carbon leading-none mb-2">${pct(s.compliance)}</div>
+        <div class="text-[14px] text-ash">Target Swasana: &gt; 90%</div>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-12">
+      ${chartContainer('slaGauge','SLA Gauge Indikator Kepatuhan','Tingkat kepatuhan berdasarkan tabel urgensi (Tinggi, Sedang, Rendah).', 280)}
+      ${chartContainer('slaTrend','Analisis Per Kuartal SLA','Variasi kepatuhan historis terhadap waktu resolusi.', 280)}
+    </div>
+  </section>`;
+}
+
+function fteView() {
+  const m = metrics();
+  return `
+  <section>
+    <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-4">FULL TIME EQUIVALENT</div>
+    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Pemodelan kapasitas tenaga kerja</h2>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-20">
+      <div class="bg-transparent border-t border-charcoal pt-6">
+        <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">Total Jam Kerja Terhitung</div>
+        <div class="text-[38px] font-normal tracking-heading text-carbon leading-none mb-2">${m.workload.toFixed(1)} jam</div>
+        <div class="text-[14px] text-ash">Beban kerja kumulatif</div>
+      </div>
+      <div class="bg-transparent border-t border-charcoal pt-6">
+        <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">FTE Index (Kebutuhan Ideal)</div>
+        <div class="text-[38px] font-normal tracking-heading text-carbon leading-none mb-2">${m.fte.toFixed(2)}</div>
+        <div class="text-[14px] text-ash">Beban ÷ Jam Kerja Efektif</div>
+      </div>
+      <div class="bg-transparent border-t border-charcoal pt-6">
+        <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">Status Efisiensi Workforce</div>
+        <div class="text-[38px] font-normal tracking-heading ${m.utilization > 100 ? 'text-iris' : 'text-carbon'} leading-none mb-2">
+          ${m.utilization > 100 ? 'Overload' : m.utilization < 80 ? 'Underload' : 'Optimal'}
+        </div>
+        <div class="text-[14px] text-ash">Utilisasi: ${m.utilization.toFixed(1)}%</div>
+      </div>
+      <div class="bg-transparent border-t border-charcoal pt-6">
+        <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">Rekomendasi Rekayasa Staff</div>
+        <div class="text-[38px] font-normal tracking-heading text-carbon leading-none mb-2">${m.rec > 0 ? `Tambah ${m.rec} Staff` : 'Tenaga Kerja Cukup'}</div>
+        <div class="text-[14px] text-ash">Gap FTE: ${m.rec > 0 ? `+${m.fteGap.toFixed(2)}` : m.fteGap.toFixed(2)}</div>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-12 items-stretch">
+      <div class="xl:col-span-1 flex flex-col h-full">
+        <div class="mb-4">
+          <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-1">SIMULATOR & FORMULA FTE</div>
+          <div class="text-[14px] text-smoke">Pengaturan simulasi beban kerja dan workforce.</div>
+        </div>
+        <div class="bg-graphite border border-twilight rounded-[10px] p-6 shadow-mockup flex-1 flex flex-col justify-between">
+          <div class="space-y-6">
+            <div>
+              <label class="text-[12px] text-ash mb-2 block font-normal">Standard Handling Time per Komplain (Jam)</label>
+              <input id="st" type="number" step="0.1" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-[14px] text-carbon focus:outline-none focus:border-iris transition-colors" value="${state.fte.standardTime}">
+            </div>
+            <div>
+              <label class="text-[12px] text-ash mb-2 block font-normal">Jam Kerja Efektif per Orang / Periode</label>
+              <input id="ew" type="number" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-[14px] text-carbon focus:outline-none focus:border-iris transition-colors" value="${state.fte.effectiveHours}">
+            </div>
+            <div>
+              <label class="text-[12px] text-ash mb-2 block font-normal">Jumlah Workforce Aktual (Saat Ini)</label>
+              <input id="cw" type="number" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-[14px] text-carbon focus:outline-none focus:border-iris transition-colors" value="${m.currentStaff}">
+            </div>
+          </div>
+          <button id="saveFteBtn" class="w-full bg-transparent border border-carbon text-carbon rounded-full px-5 py-3 font-medium hover:bg-carbon hover:text-pitch transition-all text-[14px] mt-8 shrink-0">
+            Simpan & Hitung Ulang Parameter
+          </button>
+        </div>
+      </div>
+      <div class="xl:col-span-2">
+        ${chartContainer('fteGauge','Beban Kerja vs Kapasitas Staff Aktif','Ambang batas pemanfaatan tenaga kerja.', 280)}
+      </div>
+    </div>
+  </section>`;
+}
+
+function reportView() {
+  const m = metrics();
+  const s = calcSLA();
+  return `
+  <section>
+    <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-4">EKSPOR & PUBLIKASI</div>
+    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Laporan eksekutif manajemen</h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
+      ${[
+        { title: 'KPI Performance Report', key: 'kpi',
+          desc: 'Ekspor laporan scorecard KPI per perspektif balanced scorecard dengan nilai aktual vs target.' },
+        { title: 'SLA Performance Report', key: 'sla',
+          desc: 'Ekspor data kepatuhan SLA per kasus beserta ringkasan response & resolution time.' },
+        { title: 'FTE Workload Report', key: 'fte',
+          desc: 'Ekspor analisis kapasitas tenaga kerja, utilisasi, gap FTE, dan rekomendasi rekruitmen.' }
+      ].map(({ title, key, desc }) => `
+        <div class="bg-graphite border border-charcoal rounded-[10px] p-6 shadow-mockup flex flex-col justify-between">
+          <div>
+            <h3 class="text-[18px] font-normal tracking-headingsm text-carbon mb-2">${title}</h3>
+            <p class="text-[14px] text-smoke leading-relaxed">${desc}</p>
+          </div>
+          <div class="mt-8 flex gap-4">
+            <button data-print-report="${key}" class="text-carbon hover:text-specter underline underline-offset-4 text-[14px] font-medium transition-colors">Cetak PDF</button>
+            <button data-export-report="${key}" class="text-ash hover:text-carbon underline underline-offset-4 text-[14px] font-medium transition-colors">Unduh Excel</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    <!-- Preview ringkasan eksekutif -->
+    <div class="bg-void border border-charcoal rounded-[10px] p-12 max-w-4xl mx-auto shadow-video">
+      <div class="text-center border-b border-charcoal pb-8 mb-8">
+        <h2 class="text-[24px] font-bold tracking-headingsm text-carbon mb-1">RINGKASAN EKSEKUTIF PERFORMA SWASANA</h2>
+        <p class="text-xs text-iris font-semibold tracking-wider uppercase mt-1">Tenant Complaint & Workforce Command Center</p>
+        <p class="text-[12px] text-smoke font-mono mt-1">Laporan digenerate: ${new Date().toLocaleDateString('id-ID')}</p>
+      </div>
+      <div class="grid grid-cols-2 gap-12 text-[14px] mb-8">
+        <div class="space-y-4 border-r border-charcoal pr-8">
+          <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-bold">Ringkasan Operasional Komplain</div>
+          <div class="flex justify-between"><span class="text-ash">Jumlah Kasus Terdaftar:</span><span class="text-carbon font-mono font-bold">${m.total} Kasus</span></div>
+          <div class="flex justify-between"><span class="text-ash">Tingkat Penyelesaian:</span><span class="text-iris font-mono font-bold">${pct(m.kpi)}</span></div>
+          <div class="flex justify-between"><span class="text-ash">Backlogs Aktif:</span><span class="text-carbon font-mono font-bold">${m.onp + m.pending} Kasus</span></div>
+        </div>
+        <div class="space-y-4">
+          <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-bold">Kinerja SLA & FTE</div>
+          <div class="flex justify-between"><span class="text-ash">Kepatuhan SLA:</span><span class="text-iris font-mono font-bold">${pct(s.compliance)}</span></div>
+          <div class="flex justify-between"><span class="text-ash">Avg. Resolution Time:</span><span class="text-carbon font-mono font-bold">${s.averageResolution.toFixed(2)} jam</span></div>
+          <div class="flex justify-between"><span class="text-ash">Rekomendasi Staff:</span><span class="text-carbon font-mono font-bold">${m.rec > 0 ? `+${m.rec} Orang` : 'Terpenuhi'}</span></div>
+        </div>
+      </div>
+      <div class="p-6 bg-graphite border border-twilight rounded-[10px] text-[14px] leading-relaxed text-ash">
+        <strong class="text-carbon font-bold">Catatan Evaluasi:</strong>
+        Sistem mencatat kepatuhan SLA bernilai <strong class="text-carbon">${pct(s.compliance)}</strong> dengan rata-rata pengerjaan teknis selesai dalam
+        <strong class="text-carbon">${s.averageResolution.toFixed(1)} jam</strong>.
+        Indeks beban FTE <strong class="text-carbon">${m.fte.toFixed(2)}</strong> terhadap kapasitas aktual
+        <strong class="text-carbon">${m.currentStaff} staf</strong>.
+        ${m.rec > 0
+          ? `Disarankan penambahan <strong class="text-carbon">${m.rec} staf</strong> untuk memenuhi kebutuhan operasional.`
+          : 'Kapasitas tenaga kerja dinilai memadai.'}
+      </div>
+    </div>
+  </section>`;
+}
+
+// ============================================================
+// Modals
+// ============================================================
+function confirmModalTemplate() {
+  return `
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-sm">
+    <div class="w-full max-w-md bg-graphite border border-twilight rounded-[10px] p-8 shadow-video">
+      <h3 class="text-[24px] font-normal tracking-headingsm text-carbon mb-2">${ui.confirmModal.title}</h3>
+      <p class="text-[14px] text-smoke leading-relaxed mb-8">${ui.confirmModal.message}</p>
+      <div class="flex justify-end gap-4">
+        <button id="cancelConfirmBtn" class="text-ash hover:text-carbon transition-colors font-medium text-[14px]">Batal</button>
+        <button id="okConfirmBtn" class="bg-carbon text-pitch rounded-full px-5 py-2.5 font-medium hover:bg-specter transition-colors text-[14px]">Ya, Hapus</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function importModalTemplate() {
+  return `
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-sm">
+    <div class="w-full max-w-lg bg-graphite border border-twilight rounded-[10px] p-8 shadow-video">
+      <div class="flex items-center justify-between mb-6">
+        <h3 class="text-[24px] font-normal tracking-headingsm text-carbon">Import Database Komplain Excel/CSV</h3>
+        <button id="closeImportModal" class="text-ash hover:text-carbon transition-colors text-lg">✕</button>
+      </div>
+      <div class="space-y-6">
+        <p class="text-[14px] text-smoke leading-relaxed">
+          Unggah berkas Excel (.xlsx, .xls) atau CSV. Kolom wajib:
+          <code class="font-mono text-iris block mt-2 text-[12px] bg-void border border-charcoal rounded p-2">entered, responded, category, priority, status, pic</code>
+        </p>
+        <div class="border border-dashed border-charcoal hover:border-iris bg-void rounded-[10px] p-12 text-center cursor-pointer transition-all" id="dropArea">
+          <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv" class="hidden" />
+          <p class="font-mono text-[12px] uppercase tracking-eyebrow text-smoke" id="importPlaceholder">Klik atau seret berkas ke sini</p>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function modalForm(item = null) {
+  const x = item || { id: '', entered: new Date().toISOString().slice(0,16), responded: '', completed: '', category: 'Plumbing/Air', priority: 'High', status: 'On Progress', pic: 'Teknisi' };
+  return `
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-sm overflow-y-auto">
+    <div class="w-full max-w-2xl bg-graphite border border-twilight rounded-[10px] p-8 shadow-video my-auto">
+      <div class="flex items-center justify-between mb-8 border-b border-charcoal pb-4">
+        <h3 class="text-[24px] font-normal tracking-headingsm text-carbon">${item ? 'Edit Komplain' : 'Tambah Komplain Baru'}</h3>
+        <button data-close class="text-ash hover:text-carbon text-lg transition-colors">✕</button>
+      </div>
+      <form id="complaintForm" class="grid grid-cols-1 md:grid-cols-2 gap-6 text-[14px]">
+        <input type="hidden" name="id" value="${x.id}">
+        <div>
+          <label class="text-[12px] text-ash mb-2 block font-normal">Complaint ID</label>
+          <input name="id2" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-smoke font-mono focus:outline-none" value="${x.id || uid()}" readonly />
+        </div>
+        <div>
+          <label class="text-[12px] text-ash mb-2 block font-normal">Kategori Komplain</label>
+          <select name="category" id="catSelect" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-carbon focus:outline-none focus:border-iris appearance-none">
+            ${categories.map(c => `<option ${x.category===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="text-[12px] text-ash mb-2 block font-normal">Tanggal Masuk</label>
+          <input type="datetime-local" name="entered" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-carbon focus:outline-none focus:border-iris" value="${x.entered?x.entered.slice(0,16):''}" required />
+        </div>
+        <div>
+          <label class="text-[12px] text-ash mb-2 block font-normal">Tanggal Response (SLA)</label>
+          <input type="datetime-local" name="responded" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-carbon focus:outline-none focus:border-iris" value="${x.responded?x.responded.slice(0,16):''}" />
+        </div>
+        <div>
+          <label class="text-[12px] text-ash mb-2 block font-normal">Tanggal Selesai (Resolution)</label>
+          <input type="datetime-local" name="completed" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-carbon focus:outline-none focus:border-iris" value="${x.completed?x.completed.slice(0,16):''}" />
+        </div>
+        <div>
+          <label class="text-[12px] text-ash mb-2 block font-normal">Skala Prioritas</label>
+          <select name="priority" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-carbon focus:outline-none focus:border-iris appearance-none">
+            ${priorities.map(p => `<option ${x.priority===p?'selected':''}>${p}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="text-[12px] text-ash mb-2 block font-normal">Status Kasus</label>
+          <select name="status" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-carbon focus:outline-none focus:border-iris appearance-none">
+            ${statuses.map(s => `<option ${x.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="text-[12px] text-ash mb-2 block font-normal">PIC Lapangan</label>
+          <input id="picInput" name="pic" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-carbon focus:outline-none focus:border-iris" value="${x.pic}" />
+        </div>
+        <div class="md:col-span-2 flex justify-end gap-4 mt-8">
+          <button type="button" data-close class="text-ash hover:text-carbon font-medium transition-colors text-[14px]">Batal</button>
+          <button class="bg-carbon text-pitch rounded-full px-6 py-3 font-medium hover:bg-specter transition-colors text-[14px]">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>`;
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function toast(msg) {
+  const wrap = document.getElementById('toastWrap');
+  if (!wrap) return;
+  const id = 't' + Date.now();
+  wrap.insertAdjacentHTML('beforeend', `
+    <div id="${id}" class="bg-graphite border border-twilight shadow-video rounded-[10px] px-6 py-4 flex items-center gap-4 text-[14px] text-carbon transition-all duration-300">
+      <span class="w-2 h-2 rounded-full bg-iris animate-pulse"></span>
+      <span class="font-mono">${msg}</span>
+    </div>
+  `);
+  setTimeout(() => {
+    const el = document.getElementById(id);
+    if (el) { el.classList.add('opacity-0','translate-y-2'); setTimeout(() => el.remove(), 300); }
+  }, 3000);
+}
+
+// ============================================================
+// Chart rendering — pakai requestAnimationFrame agar canvas siap
+// ============================================================
+function destroyCharts() {
+  for (const k in charts) { try { charts[k].destroy(); } catch(e){} }
+  charts = {};
+}
+
+const CP = {
+  iris: '#6199f6', carbon: '#fcfcfc', smoke: '#757580', ash: '#a3a3b3',
+  twilight: '#4f4f80', charcoal: '#2a2a32', void: '#040407',
+  green: '#10b981', red: '#f43f5e', amber: '#f59e0b'
+};
+
+function renderCharts() {
+  destroyCharts();
+
+  // Gunakan rAF agar canvas sudah selesai dirender di DOM
+  requestAnimationFrame(() => {
+    const m = metrics();
+    const s = calcSLA();
+    const qSLA = calcSLAByQuarter();
+
+    const baseOpts = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: CP.ash, font: { family: 'Space Mono', size: 10 } } } },
+      scales: {
+        x: { ticks: { color: CP.smoke, font: { family: 'Inter', size: 11 } }, grid: { color: 'rgba(117,117,128,0.08)' } },
+        y: { ticks: { color: CP.smoke, font: { family: 'Inter', size: 11 } }, grid: { color: 'rgba(117,117,128,0.08)' } }
+      }
+    };
+    const pieOpts = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: CP.ash, font: { family: 'Space Mono', size: 10 } } } }
+    };
+
+    // 1. Monthly Trend
+    const c1 = document.getElementById('monthlyTrend');
+    if (c1) {
+      const monthlyCounts = [...Array(12)].map((_, i) =>
+        state.complaints.filter(x => new Date(x.entered).getMonth() === i).length
+      );
+      charts['monthlyTrend'] = new Chart(c1, {
+        type: 'line',
+        data: {
+          labels: ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'],
+          datasets: [{
+            label: 'Total Kasus Masuk',
+            data: monthlyCounts,
+            borderColor: CP.iris,
+            backgroundColor: 'rgba(97,153,246,0.08)',
+            fill: true, tension: 0.35, borderWidth: 2,
+            pointBackgroundColor: CP.iris, pointRadius: 4
+          }]
+        },
+        options: baseOpts
+      });
+    }
+
+    // 2. Category Doughnut — exact match kategori
+    const c2 = document.getElementById('categoryPie');
+    if (c2) {
+      const byCat = categories.map(cat =>
+        state.complaints.filter(x => x.category.trim() === cat).length
+      );
+      const shortLabels = ['Plumbing', 'Listrik', 'Teknis Unit', 'Fas. Umum', 'Kebersihan', 'Keamanan', 'Administrasi', 'Renovasi'];
+      charts['categoryPie'] = new Chart(c2, {
+        type: 'doughnut',
+        data: {
+          labels: shortLabels,
+          datasets: [{
+            data: byCat,
+            backgroundColor: [CP.iris, '#818cf8', CP.ash, CP.smoke, CP.twilight, '#6b7280', '#374151', CP.amber],
+            borderWidth: 2,
+            borderColor: '#08080c'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '55%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: CP.ash, font: { family: 'Inter', size: 9 }, boxWidth: 10, padding: 6 }
+            },
+            tooltip: { callbacks: {
+              label: ctx => ` ${categories[ctx.dataIndex]}: ${ctx.parsed} kasus`
+            }}
+          }
+        }
+      });
+    }
+
+    // 3. Workload Stack per PIC — horizontal bar
+    const c3 = document.getElementById('workloadStack');
+    if (c3) {
+      const pics = ['Teknisi', 'Housekeeping', 'Security', 'Tenant Relation'];
+      const resolvedLoads = pics.map(p =>
+        parseFloat((state.complaints.filter(x => x.pic.trim() === p && x.status === 'Done').length * state.fte.standardTime).toFixed(1))
+      );
+      const activeLoads = pics.map(p =>
+        parseFloat((state.complaints.filter(x => x.pic.trim() === p && x.status === 'On Progress').length * state.fte.standardTime).toFixed(1))
+      );
+      const pendingLoads = pics.map(p =>
+        parseFloat((state.complaints.filter(x => x.pic.trim() === p && x.status === 'Pending').length * state.fte.standardTime).toFixed(1))
+      );
+      charts['workloadStack'] = new Chart(c3, {
+        type: 'bar',
+        data: {
+          labels: pics,
+          datasets: [
+            { label: 'Selesai (jam)', data: resolvedLoads, backgroundColor: CP.green,   borderRadius: 3 },
+            { label: 'On Progress (jam)', data: activeLoads,  backgroundColor: CP.iris,    borderRadius: 3 },
+            { label: 'Pending (jam)',  data: pendingLoads, backgroundColor: CP.amber,   borderRadius: 3 },
+          ]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: CP.ash, font: { family: 'Space Mono', size: 10 } } },
+            tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.x} jam` } }
+          },
+          scales: {
+            x: {
+              stacked: true,
+              grid: { color: 'rgba(117,117,128,0.08)' },
+              ticks: { color: CP.smoke, font: { family: 'Inter', size: 11 }, callback: v => v + ' j' }
+            },
+            y: {
+              stacked: true,
+              grid: { display: false },
+              ticks: { color: CP.ash, font: { family: 'Inter', size: 12 } }
+            }
+          }
+        }
+      });
+    }
+
+    // 4. SLA Gauge (doughnut) — nilai dari kalkulasi nyata
+    const c4 = document.getElementById('slaGauge');
+    if (c4) {
+      charts['slaGauge'] = new Chart(c4, {
+        type: 'doughnut',
+        data: {
+          labels: [`Patuh SLA (${s.compliant})`, `Melanggar SLA (${s.non})`],
+          datasets: [{
+            data: [s.compliant, s.non],
+            backgroundColor: [CP.carbon, '#2a2a32'],
+            borderWidth: 2, borderColor: CP.void
+          }]
+        },
+        options: {
+          ...pieOpts,
+          cutout: '70%',
+          plugins: {
+            ...pieOpts.plugins,
+            tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} kasus` }}
+          }
+        }
+      });
+    }
+
+    // 5. SLA Trend per kuartal — data nyata dari calcSLAByQuarter()
+    const c5 = document.getElementById('slaTrend');
+    if (c5) {
+      charts['slaTrend'] = new Chart(c5, {
+        type: 'line',
+        data: {
+          labels: ['Q1 (Jan–Mar)', 'Q2 (Apr–Jun)', 'Q3 (Jul–Sep)', 'Q4 (Okt–Des)'],
+          datasets: [{
+            label: 'Kepatuhan SLA (%)',
+            data: qSLA,
+            borderColor: CP.carbon,
+            backgroundColor: 'rgba(252,252,252,0.08)',
+            fill: true, tension: 0.3, borderWidth: 2,
+            pointBackgroundColor: CP.carbon, pointRadius: 5
+          }]
+        },
+        options: {
+          ...baseOpts,
+          scales: {
+            ...baseOpts.scales,
+            y: {
+              ...baseOpts.scales.y,
+              min: 0, max: 100,
+              ticks: { ...baseOpts.scales.y.ticks, callback: v => v + '%' }
+            }
+          }
+        }
+      });
+    }
+
+    // 6. FTE Gauge (doughnut) — kapasitas vs beban
+    const c6 = document.getElementById('fteGauge');
+    if (c6) {
+      const isOver = m.fte > m.currentStaff;
+      const display = isOver
+        ? { labels: [`Kapasitas Staf (${m.currentStaff})`, `Defisit (${m.fteGap.toFixed(2)})`], colors: [CP.iris, CP.red] }
+        : { labels: [`Beban FTE (${m.fte.toFixed(2)})`, `Kapasitas Idle (${(m.currentStaff - m.fte).toFixed(2)})`], colors: [CP.iris, CP.charcoal] };
+      charts['fteGauge'] = new Chart(c6, {
+        type: 'doughnut',
+        data: {
+          labels: display.labels,
+          datasets: [{
+            data: isOver
+              ? [m.currentStaff, m.fteGap]
+              : [m.fte, m.currentStaff - m.fte],
+            backgroundColor: display.colors,
+            borderWidth: 2, borderColor: CP.void
+          }]
+        },
+        options: { ...pieOpts, cutout: '70%' }
+      });
+    }
+  });
+}
+
+// ============================================================
+// Render
+// ============================================================
+function render() {
+  const user = sessionUser();
+  const activeId     = document.activeElement ? document.activeElement.id : null;
+  const selStart     = document.activeElement ? document.activeElement.selectionStart : null;
+  const selEnd       = document.activeElement ? document.activeElement.selectionEnd   : null;
+
+  const pages = { dashboard: dashboardView, complaints: complaintsView, kpi: kpiView, sla: slaView, fte: fteView, report: reportView };
+  const content = (pages[ui.page] || dashboardView)();
+  const html = !user ? loginView() : shell(content);
+  document.getElementById('app').innerHTML = html;
+
+  if (user) {
+    renderCharts();
+    bindApp();
+    if (activeId) {
+      const el = document.getElementById(activeId);
+      if (el) {
+        el.focus();
+        if (selStart !== null && typeof el.setSelectionRange === 'function')
+          el.setSelectionRange(selStart, selEnd);
+      }
+    }
+  } else {
+    bindLogin();
+  }
+}
+
+function bindLogin() {
+  document.getElementById('togglePwd')?.addEventListener('click', () => {
+    const p = document.getElementById('pwd');
+    p.type = p.type === 'password' ? 'text' : 'password';
+  });
+  document.getElementById('loginForm')?.addEventListener('submit', e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    if (f.get('email') === 'admin@gmail.com' && f.get('password') === '123') {
+      localStorage.setItem(LS.session, JSON.stringify({ email: f.get('email') }));
+      toast('Login berhasil!');
+      render();
+    } else {
+      const el = document.getElementById('loginMsg');
+      if (el) el.textContent = 'Email atau Password salah';
+    }
+  });
+}
+
+function triggerConfirm(title, message, onOk) {
+  ui.confirmModal = { title, message, action: () => { onOk(); ui.confirmModal = null; render(); } };
+  render();
+}
+
+function bindApp() {
+  document.getElementById('mobileMenuBtn')?.addEventListener('click', () => { ui.mobileMenuOpen = true; render(); });
+  document.getElementById('closeMobileMenu')?.addEventListener('click', () => { ui.mobileMenuOpen = false; render(); });
+  document.getElementById('mobileDrawerBackdrop')?.addEventListener('click', e => {
+    if (e.target.id === 'mobileDrawerBackdrop') { ui.mobileMenuOpen = false; render(); }
+  });
+
+  document.getElementById('resetDataBtn')?.addEventListener('click', () => {
+    if (confirm('Reset semua data ke sample awal? Data yang sudah diinput akan hilang.')) {
+      localStorage.removeItem(LS.complaints);
+      localStorage.removeItem(LS.fte);
+      state = loadState();
+      toast('Data direset ke sample awal.');
+      render();
+    }
+  });
+
+  document.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => {
+    ui.mobileMenuOpen = false;
+    if (b.dataset.nav === 'logout') { localStorage.removeItem(LS.session); render(); return; }
+    ui.page = b.dataset.nav; render();
+  }));
+
+  document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => { ui.filter = b.dataset.filter; render(); }));
+
+  document.querySelectorAll('[data-action]').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.action === 'add')    { ui.modal = modalForm(); render(); }
+    if (b.dataset.action === 'import') { ui.importModal = true; render(); }
+  }));
+
+  // Export raw data
+  document.getElementById('exportExcelBtn')?.addEventListener('click', () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(state.complaints), 'Data');
+      XLSX.writeFile(wb, 'database_komplain_swasana.xlsx');
+      toast('Berkas ekspor berhasil disusun.');
+    } catch (e) { toast('Kegagalan proses ekspor.'); }
+  });
+
+  // Report PDF print — kirim type (kpi/sla/fte) ke triggerPrint
+  document.querySelectorAll('[data-print-report]').forEach(b => b.addEventListener('click', () => {
+    triggerPrint(b.dataset.printReport);
+  }));
+
+  // Report Excel export (KPI / SLA / FTE)
+  document.querySelectorAll('[data-export-report]').forEach(b => b.addEventListener('click', () => {
+    exportReportExcel(b.dataset.exportReport);
+  }));
+
+  document.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
+    ui.modal = modalForm(state.complaints.find(x => x.id === b.dataset.edit)); render();
+  }));
+
+  document.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+    triggerConfirm(
+      'Hapus Rekam Komplain',
+      `Yakin menghapus ${b.dataset.del}? Tindakan ini permanen.`,
+      () => { state.complaints = state.complaints.filter(x => x.id !== b.dataset.del); persist(); toast(`Entri ${b.dataset.del} dihapus.`); }
+    );
+  }));
+
+  document.getElementById('searchBox')?.addEventListener('input', e => { ui.q = e.target.value; render(); });
+  document.getElementById('sortBox')?.addEventListener('change', e => { ui.sort = e.target.value; render(); });
+
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { ui.modal = null; render(); }));
+  document.getElementById('closeImportModal')?.addEventListener('click', () => { ui.importModal = false; render(); });
+
+  document.getElementById('complaintForm')?.addEventListener('submit', e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const item = {
+      id:        f.get('id2'),
+      entered:   f.get('entered'),
+      responded: f.get('responded') || '',
+      completed: f.get('completed') || '',
+      category:  f.get('category'),
+      priority:  f.get('priority'),
+      status:    f.get('status'),
+      pic:       f.get('pic') || 'Teknisi'
+    };
+    const ix = state.complaints.findIndex(x => x.id === f.get('id'));
+    if (ix >= 0) state.complaints[ix] = item; else state.complaints.unshift(item);
+    ui.modal = null; persist(); toast('Data sudah di ubah');
+  });
+
+  document.getElementById('catSelect')?.addEventListener('change', e => {
+    const el = document.getElementById('picInput');
+    if (el) el.value = picMap[e.target.value] || 'Tenant Relation';
+  });
+
+  document.getElementById('saveFteBtn')?.addEventListener('click', () => {
+    state.fte.standardTime      = parseFloat(document.getElementById('st').value) || 1.5;
+    state.fte.effectiveHours    = parseFloat(document.getElementById('ew').value) || 2000;
+    state.fte.currentWorkforce  = parseFloat(document.getElementById('cw').value) || 15;
+    persist(); toast('Parameter FTE diperbarui.');
+  });
+
+  document.getElementById('okConfirmBtn')?.addEventListener('click', () => ui.confirmModal?.action());
+  document.getElementById('cancelConfirmBtn')?.addEventListener('click', () => { ui.confirmModal = null; render(); });
+
+  const dropArea = document.getElementById('dropArea');
+  if (dropArea) {
+    const fi = document.getElementById('importFileInput');
+    dropArea.addEventListener('click', () => fi.click());
+    fi.addEventListener('change', e => { if (e.target.files[0]) handleImportFile(e.target.files[0]); });
+    dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('border-iris'); });
+    dropArea.addEventListener('dragleave', () => dropArea.classList.remove('border-iris'));
+    dropArea.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]); });
+  }
+}
+
+function handleImportFile(file) {
+  const ph = document.getElementById('importPlaceholder');
+  if (ph) ph.textContent = `Sedang memproses ${file.name}...`;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, { type: 'binary' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      if (!rows.length) throw new Error('File kosong');
+      const updated = rows.map((r, i) => ({
+        id:        r.id || `C-IMP-${Math.random().toString(36).slice(2,6).toUpperCase()}-${i}`,
+        entered:   r.entered   ? new Date(r.entered).toISOString()   : new Date().toISOString(),
+        responded: r.responded ? new Date(r.responded).toISOString() : '',
+        completed: r.completed ? new Date(r.completed).toISOString() : '',
+        category:  r.category  || 'Fasilitas Umum',
+        priority:  r.priority  || 'Medium',
+        status:    r.status    || 'Pending',
+        pic:       r.pic       || 'Tenant Relation'
+      }));
+      state.complaints = [...updated, ...state.complaints];
+      persist(); ui.importModal = false; toast(`Berhasil import ${updated.length} komplain!`);
+    } catch (err) { ui.importModal = false; toast('Gagal membaca berkas.'); render(); }
+  };
+  reader.readAsBinaryString(file);
+}
+
+window.addEventListener('load', render);
+</script>
+</body>
+</html>
