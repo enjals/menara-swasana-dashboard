@@ -1624,7 +1624,7 @@ function bindApp() {
     };
     const ix = state.complaints.findIndex(x => x.id === f.get('id'));
     if (ix >= 0) state.complaints[ix] = item; else state.complaints.unshift(item);
-    ui.modal = null; persist(); toast('Data sudah di ubah');
+    ui.modal = null; persist(); toast('Data sudah disesuaikan');
   });
 
   document.getElementById('catSelect')?.addEventListener('change', e => {
