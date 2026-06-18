@@ -83,10 +83,10 @@ const LS = {
   fte: 'kpi_fte_settings_v3',
 };
 
-// Kategori konsisten Bahasa Indonesia
+// Kategori konsisten Bahasa Indonesia — sesuai Tabel 4.4 Skripsi
 const categories = [
   'Plumbing/Air', 'Listrik/Token', 'Teknis Unit', 'Fasilitas Umum',
-  'Kebersihan', 'Keamanan/Kejadian', 'Administrasi/Kartu Akses', 'Renovasi/Izin Kerja'
+  'Kebersihan', 'Keamanan/Kejadian', 'Administrasi/Kartu Akses', 'Renovasi/Izin Pekerjaan'
 ];
 const priorities = ['High', 'Medium', 'Low'];
 const statuses  = ['Done', 'On Progress', 'Pending'];
@@ -98,61 +98,141 @@ const picMap    = {
   'Kebersihan':                'Housekeeping',
   'Keamanan/Kejadian':         'Security',
   'Administrasi/Kartu Akses':  'Tenant Relation',
-  'Renovasi/Izin Kerja':       'Tenant Relation'
+  'Renovasi/Izin Pekerjaan':   'Tenant Relation'
 };
 
 function uid() { return 'C-' + Math.random().toString(36).slice(2, 8).toUpperCase(); }
 function fmt(n) { return new Intl.NumberFormat('id-ID').format(n); }
-function pct(n) { return (Math.round(n * 100) / 100).toFixed(2) + '%'; }
+function pct(n) { return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.floor(n * 100) / 100) + '%'; }
 function safeDate(v) { if (!v) return null; const d = new Date(v); return isNaN(d) ? null : d; }
 function hoursDiff(a, b) { return (b - a) / 36e5; }
 
 // ============================================================
-// Sample data — distribusi merata di semua kategori & PIC
+// Sample data — sesuai data aktual Skripsi Vincent (Tabel 4.3, 4.10, 4.15)
 // ============================================================
 function sampleData() {
   const data = [];
 
-  // Jumlah kasus per kategori (total 290 kasus, 12 bulan, semua 8 kategori terisi)
-  const catConfig = [
-    { cat: 'Plumbing/Air',             pic: 'Teknisi',         priority: 'High',   count: 75 },
-    { cat: 'Listrik/Token',            pic: 'Teknisi',         priority: 'High',   count: 60 },
-    { cat: 'Teknis Unit',              pic: 'Teknisi',         priority: 'Medium', count: 48 },
-    { cat: 'Fasilitas Umum',           pic: 'Teknisi',         priority: 'Medium', count: 35 },
-    { cat: 'Kebersihan',               pic: 'Housekeeping',    priority: 'Low',    count: 28 },
-    { cat: 'Keamanan/Kejadian',        pic: 'Security',        priority: 'High',   count: 18 },
-    { cat: 'Administrasi/Kartu Akses', pic: 'Tenant Relation', priority: 'Low',    count: 16 },
-    { cat: 'Renovasi/Izin Kerja',      pic: 'Tenant Relation', priority: 'Medium', count: 10 },
+  // Distribusi kasus per bulan — Tabel 4.3 Skripsi
+  // [total, done, onProgress]  (Pending = 0 di semua bulan)
+  const monthDist = [
+    [16, 16, 0],  // Jan
+    [15, 14, 1],  // Feb
+    [15, 12, 3],  // Mar
+    [14, 12, 2],  // Apr
+    [14, 12, 2],  // Mei
+    [16, 15, 1],  // Jun
+    [16, 14, 2],  // Jul
+    [15, 15, 0],  // Agu
+    [24, 23, 1],  // Sep
+    [20, 18, 2],  // Okt
+    [28, 26, 2],  // Nov
+    [18, 15, 3],  // Des
   ];
 
-  catConfig.forEach(({ cat, pic, priority, count }) => {
+  // Kasus per kategori — Tabel 4.10 & 4.12 Skripsi
+  // SLA violations: Plumbing/Air=16, Listrik/Token=2, Fasilitas Umum=1, semua lain=0
+  // Waktu standar: Plumbing=2j, Listrik=1j, TekUnit=2j, FasUmum=1j, Kebersihan=0.5j, Keamanan=1j, Admin=0.5j, Renovasi=1j
+  const catConfig = [
+    { cat: 'Plumbing/Air',             pic: 'Teknisi',         priority: 'High',   count: 128, slaViolations: 16 },
+    { cat: 'Listrik/Token',            pic: 'Teknisi',         priority: 'High',   count: 28,  slaViolations: 2  },
+    { cat: 'Teknis Unit',              pic: 'Teknisi',         priority: 'Medium', count: 24,  slaViolations: 0  },
+    { cat: 'Fasilitas Umum',           pic: 'Teknisi',         priority: 'Medium', count: 23,  slaViolations: 1  },
+    { cat: 'Kebersihan',               pic: 'Housekeeping',    priority: 'Low',    count: 2,   slaViolations: 0  },
+    { cat: 'Keamanan/Kejadian',        pic: 'Security',        priority: 'High',   count: 1,   slaViolations: 0  },
+    { cat: 'Administrasi/Kartu Akses', pic: 'Tenant Relation', priority: 'Low',    count: 4,   slaViolations: 0  },
+    { cat: 'Renovasi/Izin Pekerjaan',  pic: 'Tenant Relation', priority: 'Medium', count: 1,   slaViolations: 0  },
+  ];
+
+  // Buat pool kasus: setiap kasus punya bulan, status, dan flag SLA violation
+  // Langkah 1: bangun slot per bulan sesuai Tabel 4.3
+  const monthSlots = monthDist.map(([total, done, onp]) => {
+    const slots = [];
+    for (let d = 0; d < done; d++) slots.push('Done');
+    for (let o = 0; o < onp; o++) slots.push('On Progress');
+    return slots;
+  });
+
+  // Langkah 2: assign kasus per kategori ke bulan secara merata
+  // KUNCI: kasus SLA violation = kasus On Progress (keduanya 19, sesuai Tabel 4.3 & 4.10 skripsi)
+  // Kasus Done = sesuai SLA waktu; Kasus On Progress = tidak sesuai SLA (belum selesai)
+  let globalIdx = 0;
+  // Pool On Progress slots: dikumpulkan dulu dari monthSlots, lalu diisi ke violation cases
+  const allOnProgressSlots = [];
+  monthSlots.forEach((slots, mi) => {
+    slots.forEach(s => { if (s === 'On Progress') allOnProgressSlots.push(mi); });
+  });
+  // Rebuild clean Done slots per month (hapus On Progress dari slot)
+  const cleanDoneSlots = monthDist.map(([total, done]) => {
+    const arr = [];
+    for (let d = 0; d < done; d++) arr.push('Done');
+    return arr;
+  });
+
+  let onpIdx = 0; // pointer ke pool On Progress
+
+  catConfig.forEach(({ cat, pic, priority, count, slaViolations }) => {
+    // Violation cases = yang On Progress (tersebar merata di tengah-tengah setiap kategori)
+    const violationIndices = new Set();
+    if (slaViolations > 0) {
+      const step = Math.floor(count / (slaViolations + 1));
+      for (let v = 0; v < slaViolations; v++) {
+        violationIndices.add(Math.min(step * (v + 1), count - slaViolations + v));
+      }
+    }
+
     for (let i = 0; i < count; i++) {
-      // Sebar merata di 12 bulan
-      const mi  = i % 12;
-      const day = String((i % 27) + 1).padStart(2, '0');
-      const hr  = String(8 + (i % 9)).padStart(2, '0');
-      const mn  = String((i * 7) % 60).padStart(2, '0');
+      const isSLAViolation = violationIndices.has(i);
+
+      // Bulan: violation cases pakai bulan dari pool On Progress, sisanya dari Done slots
+      let mi;
+      if (isSLAViolation && onpIdx < allOnProgressSlots.length) {
+        mi = allOnProgressSlots[onpIdx++];
+      } else {
+        // Cari bulan yang masih punya slot Done
+        let found = false;
+        for (let m = 0; m < 12; m++) {
+          const mIdx = (globalIdx + m) % 12;
+          if (cleanDoneSlots[mIdx].length > 0) {
+            cleanDoneSlots[mIdx].shift();
+            mi = mIdx;
+            found = true;
+            break;
+          }
+        }
+        if (!found) mi = globalIdx % 12;
+      }
+
+      const day = String(((globalIdx * 3) % 25) + 1).padStart(2, '0');
+      const hr  = String(8 + (globalIdx % 10)).padStart(2, '0');
+      const mn  = String((globalIdx * 13) % 60).padStart(2, '0');
       const inD = `2025-${String(mi + 1).padStart(2, '0')}-${day}T${hr}:${mn}:00`;
 
-      // Response time — sedikit bervariasi tapi dalam target SLA sebagian besar
-      const respMins = priority === 'High'
-        ? 10 + (i % 20)          // 10–29 menit (target < 30 menit)
-        : priority === 'Medium'
-          ? 20 + (i % 40)        // 20–59 menit (target < 60 menit)
-          : 40 + (i % 80);       // 40–119 menit (target < 120 menit)
+      // Status: violation = On Progress (belum selesai = tidak sesuai SLA)
+      //         non-violation = Done (selesai tepat waktu = sesuai SLA)
+      const status = isSLAViolation ? 'On Progress' : 'Done';
+
+      // Response time: sesuai SLA kecuali violation
+      let respMins, resHours;
+      if (isSLAViolation) {
+        // Violation: response melebihi target (sudah terlambat, masih On Progress)
+        respMins = priority === 'High' ? 25 * 60 + 15   // >24j, jelas violation
+                 : priority === 'Medium' ? 75            // >1j
+                 : 150;                                  // >2j
+        resHours = priority === 'High' ? 30 + (i % 10)  // >24j
+                 : priority === 'Medium' ? 80 + (i % 10): 130 + (i % 10);
+      } else {
+        // Sesuai SLA: dalam target waktu
+        respMins = priority === 'High' ? 14 + (i % 3)   // ~0.25j (<0.5j)
+                 : priority === 'Medium' ? 30 + (i % 2) // ~0.5j (<1j)
+                 : 60 + (i % 2);                         // ~1j (<2j)
+        resHours = priority === 'High' ? 4 + (i % 5)    // 4-8j (<24j)
+                 : priority === 'Medium' ? 6 + (i % 3)  // 6-8j (<72j)
+                 : 5 + (i % 2);                          // 5-6j (<120j)
+      }
+
       const resp = new Date(new Date(inD).getTime() + respMins * 60000);
-
-      // Resolution time — sebagian dalam target, sebagian sedikit lewat
-      const resHours = priority === 'High'
-        ? 2 + (i % 22)           // 2–23 jam (target < 24 jam)
-        : priority === 'Medium'
-          ? 8 + (i % 64)         // 8–71 jam (target < 72 jam)
-          : 20 + (i % 100);      // 20–119 jam (target < 120 jam)
       const done = new Date(new Date(inD).getTime() + resHours * 3600000);
-
-      // Status: ~87% Done, sisanya On Progress / Pending
-      const roll = i % 8;
-      const status = roll < 7 ? 'Done' : (roll === 7 ? 'On Progress' : 'Pending');
 
       data.push({
         id:        uid(),
@@ -164,6 +244,7 @@ function sampleData() {
         status,
         pic
       });
+      globalIdx++;
     }
   });
 
@@ -184,7 +265,10 @@ function loadState() {
   }
   let fte = JSON.parse(localStorage.getItem(LS.fte) || 'null');
   if (!fte) {
-    fte = { standardTime: 1.5, effectiveHours: 2000, currentWorkforce: 15 };
+    // Sumber: Template_FTE_Subbab_4_7_Menara_Swasana.xlsx
+    // Total beban kerja: 360 jam, staf aktual: 32 orang
+    // Waktu kerja efektif rata2 tertimbang: ~2592 jam/orang
+    fte = { standardTime: 1.71, effectiveHours: 2592, currentWorkforce: 32 };
     localStorage.setItem(LS.fte, JSON.stringify(fte));
   }
   return { complaints: c, fte };
@@ -340,7 +424,7 @@ function buildPrintHTML(type) {
   const catRows = categories.map(cat => {
     const total = state.complaints.filter(x => x.category.trim() === cat).length;
     const done  = state.complaints.filter(x => x.category.trim() === cat && x.status === 'Done').length;
-    const pctD  = total > 0 ? ((done / total) * 100).toFixed(1) + '%' : '-';
+    const pctD  = total > 0 ? new Intl.NumberFormat('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.floor((done/total)*10000)/100) + '%' : '-';
     return `<tr><td>${cat}</td><td style="text-align:center">${total}</td><td style="text-align:center">${done}</td><td style="text-align:center">${pctD}</td></tr>`;
   }).join('');
 
@@ -349,16 +433,25 @@ function buildPrintHTML(type) {
     const cnt  = state.complaints.filter(x => x.pic.trim() === p).length;
     const done = state.complaints.filter(x => x.pic.trim() === p && x.status === 'Done').length;
     const comp = s.rows.filter(x => x.pic.trim() === p && x.ok).length;
-    const pctC = cnt > 0 ? ((comp / cnt) * 100).toFixed(1) + '%' : '-';
+    const pctC = cnt > 0 ? new Intl.NumberFormat('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.floor((comp/cnt)*10000)/100) + '%' : '-';
     return `<tr><td>${p}</td><td style="text-align:center">${cnt}</td><td style="text-align:center">${done}</td><td style="text-align:center">${pctC}</td></tr>`;
   }).join('');
 
-  // --- FTE per PIC ---
-  const fteRows = ['Teknisi', 'Housekeeping', 'Security', 'Tenant Relation'].map(p => {
-    const cnt   = state.complaints.filter(x => x.pic.trim() === p).length;
-    const hours = (cnt * state.fte.standardTime).toFixed(1);
-    const ftePIC = state.fte.effectiveHours > 0 ? (cnt * state.fte.standardTime / state.fte.effectiveHours).toFixed(2) : '0.00';
-    return `<tr><td>${p}</td><td style="text-align:center">${cnt}</td><td style="text-align:center">${hours}</td><td style="text-align:center">${ftePIC}</td></tr>`;
+  // --- FTE per PIC — sesuai data Template_FTE_Subbab_4_7_Menara_Swasana.xlsx ---
+  // Teknisi: beban 355 jam, efektif 2121.6 jam/orang, aktual 5 orang
+  // Tenant Relation: beban 3 jam, efektif 2527.2 jam/orang, aktual 2 orang
+  // Housekeeping: beban 1 jam, efektif 1996.8 jam/orang, aktual 12 orang
+  // Security: beban 1 jam, efektif 3723 jam/orang, aktual 13 orang
+  const fteDetail = {
+    'Teknisi':         { beban: 355, efektif: 2121.6,  aktual: 5  },
+    'Tenant Relation': { beban: 3,   efektif: 2527.2,  aktual: 2  },
+    'Housekeeping':    { beban: 1,   efektif: 1996.8,  aktual: 12 },
+    'Security':        { beban: 1,   efektif: 3723,    aktual: 13 },
+  };
+  const fteRows = ['Teknisi', 'Tenant Relation', 'Housekeeping', 'Security'].map(p => {
+    const d = fteDetail[p];
+    const ftePIC = d.efektif > 0 ? (d.beban / d.efektif).toFixed(4) : '0.0000';
+    return `<tr><td>${p}</td><td style="text-align:center">${state.complaints.filter(x => x.pic.trim() === p).length}</td><td style="text-align:center">${d.beban.toFixed(1)}</td><td style="text-align:center">${ftePIC}</td></tr>`;
   }).join('');
 
   const sharedStyle = `
@@ -476,7 +569,7 @@ function buildPrintHTML(type) {
           ${['Q1 (Jan–Mar)','Q2 (Apr–Jun)','Q3 (Jul–Sep)','Q4 (Okt–Des)'].map((q, i) => {
             const v = qSLA[i];
             const ok = v >= 90;
-            return `<tr><td>${q}</td><td style="text-align:center">${v.toFixed(2)}%</td><td style="text-align:center">&gt; 90%</td><td style="color:${ok?'#166534':'#991b1b'}">${ok ? '✓ Tercapai' : '✗ Belum Tercapai'}</td></tr>`;
+            return `<tr><td>${q}</td><td style="text-align:center">${new Intl.NumberFormat('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.floor(v*100)/100)}%</td><td style="text-align:center">&gt; 90%</td><td style="color:${ok?'#166534':'#991b1b'}">${ok ? '✓ Tercapai' : '✗ Belum Tercapai'}</td></tr>`;
           }).join('')}
         </tbody>
       </table>
@@ -531,8 +624,13 @@ function buildPrintHTML(type) {
 
       <h2>Beban Kerja per Divisi PIC</h2>
       <table>
-        <thead><tr><th>Divisi / PIC</th><th style="text-align:center">Jumlah Kasus</th><th style="text-align:center">Jam Kerja (Est.)</th><th style="text-align:center">FTE per Divisi</th></tr></thead>
-        <tbody>${fteRows}</tbody>
+        <thead><tr><th>Divisi / PIC</th><th style="text-align:center">Jumlah Kasus</th><th style="text-align:center">Beban Kerja (Jam)</th><th style="text-align:center">Jam Efektif/Orang</th><th style="text-align:center">Aktual Staf</th><th style="text-align:center">FTE Divisi</th></tr></thead>
+        <tbody>
+          <tr><td>Teknisi</td><td style="text-align:center">${state.complaints.filter(x=>x.pic==='Teknisi').length}</td><td style="text-align:center">355.0</td><td style="text-align:center">2,121.6</td><td style="text-align:center">5</td><td style="text-align:center">0.1674</td></tr>
+          <tr><td>Tenant Relation</td><td style="text-align:center">${state.complaints.filter(x=>x.pic==='Tenant Relation').length}</td><td style="text-align:center">3.0</td><td style="text-align:center">2,527.2</td><td style="text-align:center">2</td><td style="text-align:center">0.0012</td></tr>
+          <tr><td>Housekeeping</td><td style="text-align:center">${state.complaints.filter(x=>x.pic==='Housekeeping').length}</td><td style="text-align:center">1.0</td><td style="text-align:center">1,996.8</td><td style="text-align:center">12</td><td style="text-align:center">0.0005</td></tr>
+          <tr><td>Security</td><td style="text-align:center">${state.complaints.filter(x=>x.pic==='Security').length}</td><td style="text-align:center">1.0</td><td style="text-align:center">3,723.0</td><td style="text-align:center">13</td><td style="text-align:center">0.0003</td></tr>
+        </tbody>
       </table>
 
       <h2>Rekomendasi</h2>
@@ -658,11 +756,11 @@ function exportReportExcel(type) {
       ['Utilisasi Workforce', `${m.utilization.toFixed(1)}%`, m.utilization > 100 ? 'OVERLOAD' : m.utilization < 80 ? 'UNDERLOAD' : 'OPTIMAL'],
       ['Rekomendasi', m.rec > 0 ? `Tambah ${m.rec} staf` : 'Kapasitas Cukup', ''],
       ['', '', ''],
-      ['BEBAN PER PIC', 'JUMLAH KOMPLAIN', 'JAM KERJA (Est.)'],
-      ...['Teknisi', 'Tenant Relation', 'Housekeeping', 'Security'].map(p => {
-        const cnt = state.complaints.filter(x => x.pic === p).length;
-        return [p, cnt, (cnt * state.fte.standardTime).toFixed(1)];
-      })
+      ['BEBAN PER PIC', 'JUMLAH KOMPLAIN', 'JAM KERJA (Est.)', 'JAM EFEKTIF/ORANG', 'AKTUAL STAF', 'FTE KEBUTUHAN'],
+      ['Teknisi',         state.complaints.filter(x => x.pic === 'Teknisi').length,         355, 2121.6, 5,  (355/2121.6).toFixed(4)],
+      ['Tenant Relation', state.complaints.filter(x => x.pic === 'Tenant Relation').length, 3,   2527.2, 2,  (3/2527.2).toFixed(4)],
+      ['Housekeeping',    state.complaints.filter(x => x.pic === 'Housekeeping').length,    1,   1996.8, 12, (1/1996.8).toFixed(4)],
+      ['Security',        state.complaints.filter(x => x.pic === 'Security').length,        1,   3723,   13, (1/3723).toFixed(4)],
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fteData), 'FTE Report');
   }
@@ -962,31 +1060,185 @@ function complaintsView() {
 function kpiView() {
   const s = calcSLA();
   const m = metrics();
+
+  // 10 KPI sesuai Tabel 4.8 KPI Dictionary Skripsi — lengkap dengan rumus & nilai aktual
   const rows = [
-    ['Customer Perspective','Tingkat kepuasan layanan komplain','Skor survey bulanan / total responden','>= 4.50 / 5.00','Survey Tenant','Tenant Relation'],
-    ['Customer Perspective','Kecepatan follow-up komplain masuk',`Rerata waktu respon: ${s.averageResponse.toFixed(2)} jam`,'< 30 menit','Form Respon','Tenant Relation'],
-    ['Internal Process','Rata-rata Response Time',`Aktual: ${s.averageResponse.toFixed(2)} jam`,'High < 0.5j / Med < 1j','Log Komplain','Teknisi / PIC'],
-    ['Internal Process','Rata-rata Resolution Time',`Aktual: ${s.averageResolution.toFixed(2)} jam`,'High < 24j / Med < 72j','Log Komplain','Teknisi / PIC'],
-    ['Internal Process','Kepatuhan Target SLA',`Aktual: ${pct(s.compliance)}`,'> 90%','Log Komplain','Tenant Relation'],
-    ['Learning & Growth','Efisiensi Kapasitas Tenaga Kerja',`FTE ${m.fte.toFixed(2)} vs ${m.currentStaff} staf aktual`,'FTE ≤ Staff Aktual','Data HR','Pengelola Swasana'],
+    {
+      no: 1,
+      persp: 'Pelanggan',
+      kpi: 'Tingkat Kepuasan Penghuni',
+      definisi: 'Penilaian penghuni terhadap kualitas layanan penanganan komplain',
+      rumus: 'Total skor kepuasan / jumlah responden',
+      nilai: null,
+      keterangan: 'Perlu wawancara penghuni',
+      satuan: 'Skor (1–4)',
+      target: '≥ 3,00',
+      sumber: 'Wawancara Penghuni',
+      pic: 'Pengelola',
+    },
+    {
+      no: 2,
+      persp: 'Pelanggan',
+      kpi: 'Kejelasan Informasi Status Komplain',
+      definisi: 'Tingkat kejelasan informasi yang diterima penghuni mengenai tindak lanjut komplain',
+      rumus: 'Total skor kejelasan informasi / jumlah responden',
+      nilai: null,
+      keterangan: 'Perlu wawancara penghuni',
+      satuan: 'Skor (1–4)',
+      target: '≥ 3,00',
+      sumber: 'Wawancara Penghuni',
+      pic: 'Tenant Relation',
+    },
+    {
+      no: 3,
+      persp: 'Proses Bisnis Internal',
+      kpi: 'Rata-rata Response Time',
+      definisi: 'Waktu rata-rata dari komplain diterima sampai diberikan respons awal oleh pengelola',
+      rumus: 'Total response time / jumlah komplain',
+      nilai: `${s.averageResponse.toFixed(2)} jam`,
+      satuan: 'Jam',
+      target: 'High ≤ 0,5j / Medium ≤ 1j / Low ≤ 2j',
+      sumber: 'Log Komplain',
+      pic: 'Tenant Relation',
+    },
+    {
+      no: 4,
+      persp: 'Proses Bisnis Internal',
+      kpi: 'Rata-rata Resolution Time',
+      definisi: 'Waktu rata-rata dari komplain diterima sampai komplain selesai ditangani',
+      rumus: 'Total resolution time / jumlah komplain',
+      nilai: `${s.averageResolution.toFixed(2)} jam`,
+      satuan: 'Jam / Hari',
+      target: 'High ≤ 24j / Medium ≤ 72j / Low ≤ 120j',
+      sumber: 'Log Komplain',
+      pic: 'Tenant Relation',
+    },
+    {
+      no: 5,
+      persp: 'Proses Bisnis Internal',
+      kpi: 'Persentase Komplain Sesuai SLA',
+      definisi: 'Persentase komplain yang diselesaikan sesuai standar waktu layanan',
+      rumus: 'Jumlah komplain sesuai SLA / total komplain × 100%',
+      nilai: `${pct(s.compliance)} (${s.compliant} dari ${m.total} kasus)`,
+      keterangan: null,
+      satuan: 'Persen',
+      target: '≥ 90%',
+      sumber: 'Log Komplain & Analisis SLA',
+      pic: 'Tenant Relation',
+    },
+    {
+      no: 6,
+      persp: 'Proses Bisnis Internal',
+      kpi: 'Jumlah Komplain On Progress & Pending',
+      definisi: 'Jumlah komplain yang belum selesai atau tertunda pada periode tertentu',
+      rumus: 'Total komplain On Progress + total komplain Pending',
+      nilai: `${m.onp + m.pending} kasus (${new Intl.NumberFormat('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.floor(((m.onp+m.pending)/m.total)*10000)/100)}% dari total)`,
+      keterangan: null,
+      satuan: 'Kasus',
+      target: '≤ 5% dari total komplain',
+      sumber: 'Log Komplain',
+      pic: 'Tenant Relation',
+    },
+    {
+      no: 7,
+      persp: 'Proses Bisnis Internal',
+      kpi: 'Jumlah Komplain Berdasarkan Kategori',
+      definisi: 'Jumlah komplain yang dikelompokkan berdasarkan kategori masalah',
+      rumus: 'Total komplain per kategori',
+      nilai: null, // dihitung di render
+      nilaiDom: true,
+      keterangan: null,
+      satuan: 'Kasus',
+      target: 'Menurun pada kategori dominan',
+      sumber: 'Log Komplain',
+      pic: 'Tenant Relation',
+    },
+    {
+      no: 8,
+      persp: 'Pembelajaran & Pertumbuhan',
+      kpi: 'Kelengkapan Data Komplain',
+      definisi: 'Persentase data komplain yang tercatat lengkap (tanggal, status, kategori, PIC, waktu selesai)',
+      rumus: 'Jumlah data lengkap / total data komplain × 100%',
+      nilai: null,
+      keterangan: 'Perlu observasi lapangan',
+      satuan: 'Persen',
+      target: '100%',
+      sumber: 'Log Komplain / Observasi',
+      pic: 'Tenant Relation',
+    },
+    {
+      no: 9,
+      persp: 'Pembelajaran & Pertumbuhan',
+      kpi: 'Ketersediaan Dashboard Monitoring',
+      definisi: 'Tersedianya media monitoring untuk menampilkan KPI, SLA, status komplain, dan beban kerja',
+      rumus: 'Ada / Tidak ada dashboard',
+      nilai: 'Tersedia',
+      satuan: 'Keterangan',
+      target: 'Tersedia',
+      sumber: 'Observasi / Usulan Perbaikan',
+      pic: 'Pengelola',
+    },
+    {
+      no: 10,
+      persp: 'Pembelajaran & Pertumbuhan',
+      kpi: 'Kebutuhan Pelatihan atau Pengarahan Petugas',
+      definisi: 'Kebutuhan peningkatan kompetensi petugas dalam pencatatan, koordinasi, dan penanganan komplain',
+      rumus: 'Jumlah kebutuhan pelatihan yang teridentifikasi',
+      nilai: null,
+      keterangan: 'Perlu wawancara BM/TR/Teknisi',
+      satuan: 'Kegiatan / Kebutuhan',
+      target: 'Evaluasi berkala',
+      sumber: 'Wawancara BM / TR / Teknisi',
+      pic: 'Pengelola',
+    },
   ];
+
   return `
   <section>
     <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-4">BALANCED SCORECARD</div>
-    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Target Kinerja (KPI) Terstruktur.</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-      ${rows.map(([persp,kpi,formula,target,source,pic]) => `
-        <div class="bg-transparent border-t border-charcoal pt-6 flex flex-col h-full">
-          <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">${persp}</div>
-          <h3 class="text-[24px] font-normal tracking-headingsm text-carbon mb-4 leading-tight">${kpi}</h3>
-          <div class="text-[14px] text-ash space-y-2 mb-6 flex-1">
-            <div>Metrik: ${formula}</div>
-            <div>Sumber: ${source}</div>
-            <div>PIC: ${pic}</div>
-          </div>
-          <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mt-auto pt-4 border-t border-charcoal">Target: ${target}</div>
-        </div>
-      `).join('')}
+    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Target Kinerja (KPI) </h2>
+    <div class="bg-graphite border border-charcoal rounded-[10px] shadow-mockup overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-[13px] text-left border-collapse">
+          <thead>
+            <tr class="border-b border-charcoal bg-void/60">
+              <th class="py-3 px-4 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal text-center w-8">No</th>
+              <th class="py-3 px-4 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal w-32">Perspektif BSC</th>
+              <th class="py-3 px-4 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal w-44">KPI</th>
+              <th class="py-3 px-4 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal">Definisi</th>
+              <th class="py-3 px-4 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal w-44">Nilai Aktual</th>
+              <th class="py-3 px-4 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal w-20">Satuan</th>
+              <th class="py-3 px-4 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal w-32">Target</th>
+              <th class="py-3 px-4 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal w-28">Sumber Data</th>
+              <th class="py-3 px-4 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal w-24">PIC</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-charcoal">
+            ${rows.map(r => `
+              <tr class="hover:bg-void/40 transition-colors align-top">
+                <td class="py-3 px-4 text-center font-mono text-[12px] text-smoke">${r.no}</td>
+                <td class="py-3 px-4">
+                  <span class="font-mono text-[10px] uppercase tracking-eyebrow text-iris leading-snug">${r.persp}</span>
+                </td>
+                <td class="py-3 px-4 text-carbon font-medium leading-snug">${r.kpi}</td>
+                <td class="py-3 px-4 text-ash text-[13px] leading-relaxed">${r.definisi}</td>
+                <td class="py-3 px-4">
+                  ${r.nilaiDom
+                    ? `<div class="font-mono text-[12px] text-iris font-semibold">${m.total} kasus total</div>
+                       <div class="text-smoke text-[11px] mt-0.5">Dominan: ${categories.reduce((b,c)=>{const n=state.complaints.filter(x=>x.category===c).length;return n>b.n?{cat:c,n}:b},{cat:'-',n:0}).cat}</div>`
+                    : r.nilai
+                      ? `<span class="font-mono text-[12px] text-iris font-semibold">${r.nilai}</span>`
+                      : `<span class="text-smoke text-[12px] italic">${r.keterangan || '—'}</span>`}
+                </td>
+                <td class="py-3 px-4 text-ash text-[12px]">${r.satuan}</td>
+                <td class="py-3 px-4 font-mono text-[11px] text-iris leading-snug">${r.target}</td>
+                <td class="py-3 px-4 text-ash text-[12px]">${r.sumber}</td>
+                <td class="py-3 px-4 text-ash text-[12px]">${r.pic}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>`;
 }
@@ -996,7 +1248,7 @@ function slaView() {
   return `
   <section>
     <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-4">ANALISIS SERVICE LEVEL AGREEMENT</div>
-    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Ketepatan waktu SLA.</h2>
+    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Ketepatan waktu SLA</h2>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
       <div class="bg-transparent border-t border-charcoal pt-6">
         <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">Rata-rata Response Time</div>
@@ -1014,9 +1266,77 @@ function slaView() {
         <div class="text-[14px] text-ash">Target Swasana: &gt; 90%</div>
       </div>
     </div>
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-12">
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-12 mb-20">
       ${chartContainer('slaGauge','SLA Gauge Indikator Kepatuhan','Tingkat kepatuhan berdasarkan tabel urgensi (Tinggi, Sedang, Rendah).', 280)}
       ${chartContainer('slaTrend','Analisis Per Kuartal SLA','Variasi kepatuhan historis terhadap waktu resolusi.', 280)}
+    </div>
+
+    <div>
+      <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-1">REKAP SLA PER KATEGORI KOMPLAIN</div>
+      <div class="text-[14px] text-smoke mb-8">Kepatuhan SLA berdasarkan kategori dan tingkat urgensi.</div>
+      <div class="bg-graphite border border-charcoal rounded-[10px] shadow-mockup overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-[14px] text-left border-collapse">
+            <thead>
+              <tr class="border-b border-charcoal bg-void/50">
+                <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal">Kategori Komplain</th>
+                <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal text-center">Tingkat Urgensi</th>
+                <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal text-center">Total Kasus</th>
+                <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal text-center">Sesuai SLA</th>
+                <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal text-center">Tidak Sesuai</th>
+                <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal text-center">Capaian SLA</th>
+                <th class="py-4 px-6 font-mono text-[10px] uppercase tracking-eyebrow text-smoke font-normal text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-charcoal">
+              ${(() => {
+                const urgMap = {
+                  'Plumbing/Air': 'Tinggi', 'Listrik/Token': 'Tinggi', 'Keamanan/Kejadian': 'Tinggi',
+                  'Teknis Unit': 'Sedang', 'Fasilitas Umum': 'Sedang', 'Renovasi/Izin Pekerjaan': 'Sedang',
+                  'Kebersihan': 'Rendah', 'Administrasi/Kartu Akses': 'Rendah'
+                };
+                return categories.map(cat => {
+                  const total   = s.rows.filter(x => x.category.trim() === cat).length;
+                  const sesuai  = s.rows.filter(x => x.category.trim() === cat && x.ok).length;
+                  const tidak   = total - sesuai;
+                  const capaian = total > 0 ? (sesuai / total) * 100 : 0;
+                  const urg     = urgMap[cat] || '-';
+                  const urgColor = urg === 'Tinggi' ? 'text-iris' : urg === 'Sedang' ? 'text-carbon' : 'text-smoke';
+                  const ok      = capaian >= 90;
+                  return `
+                  <tr class="hover:bg-void transition-colors">
+                    <td class="py-4 px-6 text-carbon">${cat}</td>
+                    <td class="py-4 px-6 text-center"><span class="font-mono text-[12px] ${urgColor}">${urg}</span></td>
+                    <td class="py-4 px-6 text-center text-ash">${total}</td>
+                    <td class="py-4 px-6 text-center text-carbon">${sesuai}</td>
+                    <td class="py-4 px-6 text-center text-smoke">${tidak}</td>
+                    <td class="py-4 px-6 text-center font-mono text-[13px] ${ok ? 'text-iris' : 'text-ash'}">${new Intl.NumberFormat('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.floor(capaian*100)/100)}%</td>
+                    <td class="py-4 px-6 text-center">
+                      <span class="px-2.5 py-1 rounded-[4px] text-[12px] ${ok ? 'border border-iris text-iris' : 'border border-smoke text-smoke'} bg-transparent whitespace-nowrap">
+                        ${ok ? 'Tercapai' : 'Belum Tercapai'}
+                      </span>
+                    </td>
+                  </tr>`;
+                }).join('');
+              })()}
+            </tbody>
+            <tfoot>
+              <tr class="border-t-2 border-charcoal bg-void/50">
+                <td class="py-4 px-6 font-semibold text-carbon" colspan="2">Total Keseluruhan</td>
+                <td class="py-4 px-6 text-center font-semibold text-carbon">${s.rows.length}</td>
+                <td class="py-4 px-6 text-center font-semibold text-carbon">${s.compliant}</td>
+                <td class="py-4 px-6 text-center font-semibold text-smoke">${s.non}</td>
+                <td class="py-4 px-6 text-center font-mono font-semibold ${s.compliance >= 90 ? 'text-iris' : 'text-ash'}">${pct(s.compliance)}</td>
+                <td class="py-4 px-6 text-center">
+                  <span class="px-2.5 py-1 rounded-[4px] text-[12px] ${s.compliance >= 90 ? 'border border-iris text-iris' : 'border border-smoke text-smoke'} bg-transparent whitespace-nowrap">
+                    ${s.compliance >= 90 ? 'Tercapai' : 'Belum Tercapai'}
+                  </span>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     </div>
   </section>`;
 }
@@ -1026,7 +1346,7 @@ function fteView() {
   return `
   <section>
     <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-4">FULL TIME EQUIVALENT</div>
-    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Pemodelan kapasitas tenaga kerja</h2>
+    <h2 class="text-[38px] lg:text-[48px] font-normal tracking-headinglg text-carbon mb-12">Analisis Kebutuhan Tenaga Kerja</h2>
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-20">
       <div class="bg-transparent border-t border-charcoal pt-6">
         <div class="font-mono text-[10px] uppercase tracking-eyebrow text-smoke mb-4">Total Jam Kerja Terhitung</div>
@@ -1078,7 +1398,7 @@ function fteView() {
         </div>
       </div>
       <div class="xl:col-span-2">
-        ${chartContainer('fteGauge','Beban Kerja vs Kapasitas Staff Aktif','Ambang batas pemanfaatan tenaga kerja.', 280)}
+        ${chartContainer('fteGauge','Beban Kerja vs Kapasitas Staff Aktif','Indikator pemanfaatan tenaga kerja.', 280)}
       </div>
     </div>
   </section>`;
@@ -1624,7 +1944,7 @@ function bindApp() {
     };
     const ix = state.complaints.findIndex(x => x.id === f.get('id'));
     if (ix >= 0) state.complaints[ix] = item; else state.complaints.unshift(item);
-    ui.modal = null; persist(); toast('Data sudah disesuaikan');
+    ui.modal = null; persist(); toast('Data sudah di ubah');
   });
 
   document.getElementById('catSelect')?.addEventListener('change', e => {
