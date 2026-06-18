@@ -1636,38 +1636,6 @@ function fteView() {
         </div>
       </div>
     </div>
-
-    <!-- Global simulator & chart -->
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-12 items-stretch">
-      <div class="xl:col-span-1 flex flex-col h-full">
-        <div class="mb-4">
-          <div class="font-mono text-[12px] uppercase tracking-eyebrow text-iris mb-1">SIMULATOR GLOBAL FTE</div>
-          <div class="text-[14px] text-smoke">Parameter rata-rata keseluruhan.</div>
-        </div>
-        <div class="bg-graphite border border-twilight rounded-[10px] p-6 shadow-mockup flex-1 flex flex-col justify-between">
-          <div class="space-y-6">
-            <div>
-              <label class="text-[12px] text-ash mb-2 block font-normal">Standard Handling Time per Komplain (Jam)</label>
-              <input id="st" type="number" step="0.1" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-[14px] text-carbon focus:outline-none focus:border-iris transition-colors" value="${state.fte.standardTime}">
-            </div>
-            <div>
-              <label class="text-[12px] text-ash mb-2 block font-normal">Jam Kerja Efektif per Orang / Periode (Global)</label>
-              <input id="ew" type="number" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-[14px] text-carbon focus:outline-none focus:border-iris transition-colors" value="${state.fte.effectiveHours}">
-            </div>
-            <div>
-              <label class="text-[12px] text-ash mb-2 block font-normal">Jumlah Workforce Aktual Keseluruhan</label>
-              <input id="cw" type="number" class="w-full bg-void border border-charcoal rounded-[10px] px-4 py-3 text-[14px] text-carbon focus:outline-none focus:border-iris transition-colors" value="${m.currentStaff}">
-            </div>
-          </div>
-          <button id="saveFteBtn" class="w-full bg-transparent border border-carbon text-carbon rounded-full px-5 py-3 font-medium hover:bg-carbon hover:text-pitch transition-all text-[14px] mt-8 shrink-0">
-            Simpan & Hitung Ulang
-          </button>
-        </div>
-      </div>
-      <div class="xl:col-span-2">
-        ${chartContainer('fteGauge','Beban Kerja vs Kapasitas Staff Aktif','Indikator pemanfaatan tenaga kerja keseluruhan.', 280)}
-      </div>
-    </div>
   </section>`;
 }
 
