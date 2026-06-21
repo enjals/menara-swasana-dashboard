@@ -1101,6 +1101,7 @@ function kpiView() {
   if (s.compliance < 90) kpiIssues.push('SLA < 90%');
   if (m.kpi < 85) kpiIssues.push('Penyelesaian < 85%');
   if (m.fte > m.currentStaff) kpiIssues.push('FTE melebihi staf');
+  if (s.averageResponse > 0.5) kpiIssues.push('Response Time > 0,5 jam');
 
   return `
   <section>
@@ -1117,10 +1118,14 @@ function kpiView() {
           ${kpiIssues.length > 0
             ? `<div class="text-[13px] text-smoke">Perlu perhatian: <span class="text-ash">${kpiIssues.join(' · ')}</span></div>`
             : '<div class="text-[13px] text-smoke">Performa operasional memenuhi seluruh target KPI yang ditetapkan.</div>'}
-          <div class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-4 text-[12px]">
+          <div class="mt-3 grid grid-cols-2 md:grid-cols-5 gap-4 text-[12px]">
             <div class="border-l-2 ${sv2.kepuasan == null ? 'border-charcoal' : sv2.kepuasan >= 3.0 ? 'border-iris' : 'border-smoke'} pl-3">
               <div class="text-smoke font-mono uppercase tracking-wider text-[10px]">Kepuasan</div>
               <div class="${sv2.kepuasan >= 3.0 ? 'text-iris' : 'text-ash'} font-semibold">${sv2.kepuasan != null ? sv2.kepuasan.toFixed(2) + '/4' : '—'}</div>
+            </div>
+            <div class="border-l-2 ${s.averageResponse <= 0.5 ? 'border-iris' : 'border-smoke'} pl-3">
+              <div class="text-smoke font-mono uppercase tracking-wider text-[10px]">Response Time</div>
+              <div class="${s.averageResponse <= 0.5 ? 'text-iris' : 'text-ash'} font-semibold">${s.averageResponse.toFixed(2)} jam</div>
             </div>
             <div class="border-l-2 ${s.compliance >= 90 ? 'border-iris' : 'border-smoke'} pl-3">
               <div class="text-smoke font-mono uppercase tracking-wider text-[10px]">SLA</div>
