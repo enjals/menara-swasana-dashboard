@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="id" class="h-full bg-[#0a0a13]">
+<html lang="id" class="h-full bg-white">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -18,17 +18,17 @@
       theme: {
         extend: {
           colors: {
-            carbon: '#fcfcfc',
-            obsidian: '#0a0a13',
-            pitch: '#000000',
-            void: '#040407',
-            graphite: '#08080c',
-            smoke: '#757580',
-            ash: '#a3a3b3',
-            charcoal: '#2a2a32',
-            iris: '#6199f6',
-            twilight: '#4f4f80',
-            specter: '#dedfee',
+            carbon: '#111827',
+            obsidian: '#f8f9fa',
+            pitch: '#ffffff',
+            void: '#f1f5f9',
+            graphite: '#ffffff',
+            smoke: '#6b7280',
+            ash: '#374151',
+            charcoal: '#e2e8f0',
+            iris: '#2563eb',
+            twilight: '#bfdbfe',
+            specter: '#1e40af',
           },
           fontFamily: {
             sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
@@ -43,7 +43,7 @@
             eyebrow: '0.06em',
           },
           boxShadow: {
-            mockup: 'inset 0 0 0 1px #4f4f80, 0 0 60px rgba(79, 79, 128, 0.15)',
+            mockup: 'inset 0 0 0 1px #bfdbfe, 0 0 60px rgba(37, 99, 235, 0.10)',
             video: '0 24px 48px rgba(0, 0, 0, 0.5)',
           }
         }
@@ -53,9 +53,9 @@
 
   <style>
     body {
-      background: radial-gradient(circle at 50% 0%, rgba(79, 79, 128, 0.12) 0%, #0a0a13 70%), #0a0a13;
+      background: #f8f9fa;
       background-attachment: fixed;
-      color: #fcfcfc;
+      color: #111827;
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -63,8 +63,8 @@
 
     ::-webkit-scrollbar { width: 4px; height: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #2a2a32; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: #4f4f80; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
     input[type="datetime-local"]::-webkit-calendar-picker-indicator {
       filter: invert(1);
@@ -758,7 +758,7 @@ function sidebar() {
   <div class="fixed inset-0 z-50 bg-obsidian/90 backdrop-blur-sm xl:hidden" id="mobileDrawerBackdrop">
     <div class="absolute left-0 top-0 bottom-0 w-[240px] bg-void border-r border-charcoal flex flex-col" id="mobileDrawer">
       <div class="h-[64px] flex items-center justify-between px-6 border-b border-charcoal">
-        <div class="font-bold text-[16px] text-carbon tracking-body">SWASANA<span class="text-iris">.IO</span></div>
+        <div class="font-bold text-[16px] text-carbon tracking-body">Swasana Portal<span class="text-iris"></span></div>
         <button id="closeMobileMenu" class="text-ash hover:text-carbon text-lg">✕</button>
       </div>
       <nav class="flex-1 py-6 flex flex-col gap-1 px-4 overflow-y-auto">
@@ -1662,8 +1662,8 @@ function destroyCharts() {
 }
 
 const CP = {
-  iris: '#6199f6', carbon: '#fcfcfc', smoke: '#757580', ash: '#a3a3b3',
-  twilight: '#4f4f80', charcoal: '#2a2a32', void: '#040407',
+  iris: '#2563eb', carbon: '#111827', smoke: '#6b7280', ash: '#374151',
+  twilight: '#bfdbfe', charcoal: '#e2e8f0', void: '#f1f5f9',
   green: '#10b981', red: '#f43f5e', amber: '#f59e0b'
 };
 
@@ -1726,7 +1726,7 @@ function renderCharts() {
             data: byCat,
             backgroundColor: [CP.iris, '#818cf8', CP.ash, CP.smoke, CP.twilight, '#6b7280', '#374151', CP.amber],
             borderWidth: 2,
-            borderColor: '#08080c'
+            borderColor: '#ffffff'
           }]
         },
         options: {
@@ -1800,7 +1800,7 @@ function renderCharts() {
           labels: [`Patuh SLA (${s.compliant})`, `Melanggar SLA (${s.non})`],
           datasets: [{
             data: [s.compliant, s.non],
-            backgroundColor: [CP.carbon, '#2a2a32'],
+            backgroundColor: [CP.iris, '#e2e8f0'],
             borderWidth: 2, borderColor: CP.void
           }]
         },
