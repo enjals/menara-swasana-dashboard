@@ -79,7 +79,7 @@
 <script>
 const LS = {
   session: 'kpi_session_skripsi',
-  complaints: 'kpi_complaints_v8',   // versi v6 → paksa reset agar distribusi pelanggaran SLA persis dengan Excel
+  complaints: 'kpi_complaints_v9',   // versi v9 → paksa fresh load agar fix timezone chart aktif
   fte: 'kpi_fte_settings_v3',
 };
 
@@ -135,30 +135,13 @@ function sampleData() {
 }
 
 function loadState() {
-  let c = JSON.parse(localStorage.getItem(LS.complaints) || 'null');
-  if (!Array.isArray(c)) {
-    c = [];
-    localStorage.setItem(LS.complaints, JSON.stringify(c));
-  }
-  let fte = JSON.parse(localStorage.getItem(LS.fte) || 'null');
-  if (!fte) {
-    fte = { standardTime: 1.71, effectiveHours: 2592, currentWorkforce: 32 };
-    localStorage.setItem(LS.fte, JSON.stringify(fte));
-  }
-
-  let divConfig = JSON.parse(localStorage.getItem('kpi_div_config_v2') || 'null');
-  if (!divConfig) {
-    divConfig = defaultDivConfig;
-    localStorage.setItem('kpi_div_config_v2', JSON.stringify(divConfig));
-  }
-
-  let surveyScores = JSON.parse(localStorage.getItem('kpi_survey_v1') || 'null');
-  if (!surveyScores) {
-    surveyScores = { kepuasan: null, kejelasan: null, pelatihan: null };
-    localStorage.setItem('kpi_survey_v1', JSON.stringify(surveyScores));
-  }
-
-  return { complaints: c, fte, divConfig, surveyScores };
+  // Tidak pakai localStorage — data hidup di memory saja, fresh tiap sesi
+  return {
+    complaints: [],
+    fte: { standardTime: 1.71, effectiveHours: 2592, currentWorkforce: 32 },
+    divConfig: JSON.parse(JSON.stringify(defaultDivConfig)),
+    surveyScores: { kepuasan: null, kejelasan: null, pelatihan: null }
+  };
 }
 
 let state = loadState();
@@ -166,13 +149,10 @@ let ui    = { page: 'dashboard', q: '', filter: 'all', sort: 'entered_desc', mod
 let charts = {};
 
 function persist() {
-  localStorage.setItem(LS.complaints, JSON.stringify(state.complaints));
-  localStorage.setItem(LS.fte, JSON.stringify(state.fte));
-  if (state.divConfig) localStorage.setItem('kpi_div_config_v2', JSON.stringify(state.divConfig));
-  if (state.surveyScores) localStorage.setItem('kpi_survey_v1', JSON.stringify(state.surveyScores));
-  render();
+  render(); // Tidak pakai localStorage — cukup re-render dari state di memory
 }
-function sessionUser() { return JSON.parse(localStorage.getItem(LS.session) || 'null'); }
+let _session = null;
+function sessionUser() { return _session; }
 
 // ============================================================
 // Metrics & SLA
@@ -764,7 +744,7 @@ function sidebar() {
   <div class="fixed inset-0 z-50 bg-obsidian/90 backdrop-blur-sm xl:hidden" id="mobileDrawerBackdrop">
     <div class="absolute left-0 top-0 bottom-0 w-[240px] bg-void border-r border-charcoal flex flex-col" id="mobileDrawer">
       <div class="h-[64px] flex items-center justify-between px-6 border-b border-charcoal">
-        <div class="font-bold text-[16px] text-carbon tracking-body">Swasana Portal<span class="text-iris"></span></div>
+        <div class="font-bold text-[16px] text-carbon tracking-body">Swasana Portal<span class="text-iris"> v9</span></div>
         <button id="closeMobileMenu" class="text-ash hover:text-carbon text-lg">✕</button>
       </div>
       <nav class="flex-1 py-6 flex flex-col gap-1 px-4 overflow-y-auto">
@@ -1698,18 +1678,26 @@ function renderCharts() {
 
     const c1 = document.getElementById('monthlyTrend');
     if (c1) {
-      // FIX: Gunakan parsing lokal (bukan UTC) agar tidak terjadi timezone shift (WIB = UTC+7).
-      // new Date("YYYY-MM-DDTHH:MM:00") tanpa 'Z' seharusnya lokal, tapi perilaku browser
-      // tidak konsisten. Solusi aman: ambil bulan langsung dari string ISO tanpa konstruksi Date.
-      function getLocalMonth(dateStr) {
-        if (!dateStr) return -1;
-        // Format: "YYYY-MM-DDTHH:MM:SS" atau "YYYY-MM-DDTHH:MM"
-        const parts = String(dateStr).split('T')[0].split('-');
-        return parts.length >= 2 ? parseInt(parts[1], 10) - 1 : -1; // 0-indexed
-      }
-      const monthlyCounts = [...Array(12)].map((_, i) =>
-        state.complaints.filter(x => getLocalMonth(x.entered) === i).length
-      );
+      // Data bulanan diambil dari kolom 'Bulan' di Excel — ground truth, tidak bergantung parsing tanggal
+      const bulanMap = {
+        'januari':0,'februari':1,'maret':2,'april':3,'mei':4,'juni':5,
+        'juli':6,'agustus':7,'september':8,'oktober':9,'november':10,'desember':11
+      };
+      const monthlyCounts = [0,0,0,0,0,0,0,0,0,0,0,0];
+      state.complaints.forEach(x => {
+        const b = (x.bulan || '').toLowerCase().trim();
+        const idx = bulanMap[b];
+        if (idx !== undefined) monthlyCounts[idx]++;
+        else {
+          // fallback: baca dari tanggal jika bulan tidak ada
+          const parts = String(x.entered || '').split('T')[0].split('-');
+          if (parts.length >= 2) {
+            const m = parseInt(parts[1], 10) - 1;
+            if (m >= 0 && m < 12) monthlyCounts[m]++;
+          }
+        }
+      });
+
       charts['monthlyTrend'] = new Chart(c1, {
         type: 'line',
         data: {
@@ -1922,7 +1910,7 @@ function bindLogin() {
     e.preventDefault();
     const f = new FormData(e.target);
     if (f.get('email') === 'admin@gmail.com' && f.get('password') === '123') {
-      localStorage.setItem(LS.session, JSON.stringify({ email: f.get('email') }));
+      _session = { email: f.get('email') };
       toast('Login berhasil!');
       render();
     } else {
@@ -1952,7 +1940,7 @@ function bindApp() {
         state.complaints = [];
         state.surveyScores = { kepuasan: null, kejelasan: null, pelatihan: null };
         state.divConfig = JSON.parse(JSON.stringify(defaultDivConfig));
-        localStorage.removeItem('kpi_div_config_v1');
+        
         persist();
         toast('Semua data berhasil direset ke 0.');
       }
@@ -1961,7 +1949,7 @@ function bindApp() {
 
   document.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => {
     ui.mobileMenuOpen = false;
-    if (b.dataset.nav === 'logout') { localStorage.removeItem(LS.session); render(); return; }
+    if (b.dataset.nav === 'logout') { _session = null; render(); return; }
     ui.page = b.dataset.nav; render();
   }));
 
@@ -2072,6 +2060,8 @@ function bindApp() {
     dropArea.addEventListener('dragleave', () => dropArea.classList.remove('border-iris'));
     dropArea.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]); });
   }
+
+
 }
 
 function detectImportFormat(rows) {
@@ -2098,9 +2088,14 @@ function parseSLArow(r, i) {
       const dt = new Date(epoch.getTime() + tanggal * 86400000);
       y = dt.getUTCFullYear(); mo = dt.getUTCMonth(); da = dt.getUTCDate();
     } else {
-      const dt = new Date(tanggal);
-      if (isNaN(dt)) return null;
-      y = dt.getFullYear(); mo = dt.getMonth(); da = dt.getDate();
+      // Tanggal sebagai string (misal dari CSV: "2025-01-02" atau "2025-01-02T08:00:00")
+      // Ambil langsung dari string tanpa konstruksi Date supaya tidak ada timezone shift.
+      const s = String(tanggal).trim();
+      const datePart = s.includes('T') ? s.split('T')[0] : s.split(' ')[0];
+      const dp = datePart.split('-');
+      if (dp.length < 3) return null;
+      y = parseInt(dp[0], 10); mo = parseInt(dp[1], 10) - 1; da = parseInt(dp[2], 10);
+      if (isNaN(y) || isNaN(mo) || isNaN(da)) return null;
     }
 
     let h = 0, mi = 0;
@@ -2137,12 +2132,16 @@ function parseSLArow(r, i) {
   // karena "selesai ditangani" dan "sesuai SLA" adalah dua hal yang berbeda.
   const status = completed ? 'Done' : (responded ? 'On Progress' : 'Pending');
 
+  // Simpan field bulan dari Excel supaya chart bulanan bisa baca langsung
+  // tanpa bergantung pada parsing tanggal (menghindari timezone issue sepenuhnya)
+  const bulan = String(r['Bulan'] || '').trim();
+
   return {
     id: `C-SLA-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${i}`,
     entered: entered || new Date().toISOString().slice(0, 16),
     responded: responded || '',
     completed: completed || '',
-    category: cat, priority, status, pic
+    category: cat, priority, status, pic, bulan
   };
 }
 
@@ -2198,8 +2197,8 @@ function handleImportFile(file) {
         ph.textContent = `✓ Selesai — ${updated.length} data berhasil diimpor`;
         ph.className = 'font-mono text-[12px] uppercase tracking-eyebrow text-iris font-bold';
       }
-      state.complaints = [...updated, ...state.complaints];
-      setTimeout(() => { persist(); ui.importModal = false; toast(`Import selesai: ${updated.length} data komplain ditambahkan.`); }, 1200);
+      state.complaints = updated;
+      setTimeout(() => { persist(); ui.importModal = false; toast(`Import selesai: ${updated.length} data dimuat. Data sebelumnya telah diganti.`); }, 1200);
     } catch (err) {
       if (ph) { ph.textContent = `✗ Gagal: ${err.message}`; ph.className = 'font-mono text-[12px] uppercase tracking-eyebrow text-red-400'; }
       setTimeout(() => { ui.importModal = false; render(); }, 1500);
