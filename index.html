@@ -240,11 +240,17 @@ function calcSLA() {
 }
 
 function calcSLAByQuarter() {
+  // FIX: Baca bulan dari string ISO agar tidak ada timezone shift (UTC+0 vs WIB UTC+7)
+  function getLocalMonthSLA(dateStr) {
+    if (!dateStr) return -1;
+    const parts = String(dateStr).split('T')[0].split('-');
+    return parts.length >= 2 ? parseInt(parts[1], 10) - 1 : -1;
+  }
   const quarters = [
-    state.complaints.filter(x => { const m = new Date(x.entered).getMonth(); return m < 3; }),
-    state.complaints.filter(x => { const m = new Date(x.entered).getMonth(); return m >= 3 && m < 6; }),
-    state.complaints.filter(x => { const m = new Date(x.entered).getMonth(); return m >= 6 && m < 9; }),
-    state.complaints.filter(x => { const m = new Date(x.entered).getMonth(); return m >= 9; }),
+    state.complaints.filter(x => { const m = getLocalMonthSLA(x.entered); return m >= 0 && m < 3; }),
+    state.complaints.filter(x => { const m = getLocalMonthSLA(x.entered); return m >= 3 && m < 6; }),
+    state.complaints.filter(x => { const m = getLocalMonthSLA(x.entered); return m >= 6 && m < 9; }),
+    state.complaints.filter(x => { const m = getLocalMonthSLA(x.entered); return m >= 9; }),
   ];
 
   return quarters.map(qRows => {
@@ -1692,8 +1698,17 @@ function renderCharts() {
 
     const c1 = document.getElementById('monthlyTrend');
     if (c1) {
+      // FIX: Gunakan parsing lokal (bukan UTC) agar tidak terjadi timezone shift (WIB = UTC+7).
+      // new Date("YYYY-MM-DDTHH:MM:00") tanpa 'Z' seharusnya lokal, tapi perilaku browser
+      // tidak konsisten. Solusi aman: ambil bulan langsung dari string ISO tanpa konstruksi Date.
+      function getLocalMonth(dateStr) {
+        if (!dateStr) return -1;
+        // Format: "YYYY-MM-DDTHH:MM:SS" atau "YYYY-MM-DDTHH:MM"
+        const parts = String(dateStr).split('T')[0].split('-');
+        return parts.length >= 2 ? parseInt(parts[1], 10) - 1 : -1; // 0-indexed
+      }
       const monthlyCounts = [...Array(12)].map((_, i) =>
-        state.complaints.filter(x => new Date(x.entered).getMonth() === i).length
+        state.complaints.filter(x => getLocalMonth(x.entered) === i).length
       );
       charts['monthlyTrend'] = new Chart(c1, {
         type: 'line',
