@@ -79,11 +79,10 @@
 <script>
 const LS = {
   session: 'kpi_session_skripsi',
-  complaints: 'kpi_complaints_v9',   // versi v9 → paksa fresh load agar fix timezone chart aktif
+  complaints: 'kpi_complaints_v9',   
   fte: 'kpi_fte_settings_v3',
 };
 
-// Kategori konsisten Bahasa Indonesia — sesuai Tabel 4.4 Skripsi
 const categories = [
   'Plumbing/Air', 'Listrik/Token', 'Teknis Unit', 'Fasilitas Umum',
   'Kebersihan', 'Keamanan/Kejadian', 'Administrasi/Kartu Akses', 'Renovasi/Izin Pekerjaan'
@@ -101,7 +100,6 @@ const picMap    = {
   'Renovasi/Izin Pekerjaan':   'Tenant Relation'
 };
 
-// Waktu standar penanganan per kategori (jam) — sesuai Tabel 4.12 Skripsi
 const CATEGORY_STD_TIME = {
   'Plumbing/Air':              2,
   'Listrik/Token':              1,
@@ -126,16 +124,11 @@ function pct(n) { return new Intl.NumberFormat('id-ID', { minimumFractionDigits:
 function safeDate(v) { if (!v) return null; const d = new Date(v); return isNaN(d) ? null : d; }
 function hoursDiff(a, b) { return (b - a) / 36e5; }
 
-// ============================================================
-// Data kosong — tidak ada data sample. Semua data diinput manual
-// melalui form "Tambah Baru" atau Import Excel/CSV.
-// ============================================================
 function sampleData() {
   return [];
 }
 
 function loadState() {
-  // Tidak pakai localStorage — data hidup di memory saja, fresh tiap sesi
   return {
     complaints: [],
     fte: { standardTime: 1.71, effectiveHours: 2592, currentWorkforce: 32 },
@@ -149,14 +142,11 @@ let ui    = { page: 'dashboard', q: '', filter: 'all', sort: 'entered_desc', mod
 let charts = {};
 
 function persist() {
-  render(); // Tidak pakai localStorage — cukup re-render dari state di memory
+  render(); 
 }
 let _session = null;
 function sessionUser() { return _session; }
 
-// ============================================================
-// Metrics & SLA
-// ============================================================
 function metrics() {
   const all  = state.complaints;
   const total   = all.length;
@@ -165,14 +155,10 @@ function metrics() {
   const pending = all.filter(x => x.status === 'Pending').length;
   const open    = all.filter(x => x.status === 'Open').length;
 
-  // Total Beban Kerja = Σ (Jumlah Komplain per Kategori × Waktu Standar per Kategori) — Tabel 4.13
   const divFTE = calcFTEPerDiv();
   const workload     = divFTE.reduce((a, d) => a + d.beban, 0);
-  // Kebutuhan FTE total = Σ FTE tiap divisi (Tabel 4.15)
   const fte           = divFTE.reduce((a, d) => a + d.fte, 0);
-  // Tenaga Kerja Aktual total = Σ tenaga kerja aktual tiap divisi (Tabel 4.11)
   const currentStaff  = divFTE.reduce((a, d) => a + (d.cfg.aktual || 0), 0) || 1;
-  // Selisih = Tenaga Kerja Aktual - Kebutuhan FTE (Tabel 4.15); gap positif = kekurangan staf
   const fteGap        = fte - currentStaff;
   const rec           = fteGap > 0 ? Math.ceil(fteGap) : 0;
   const utilization   = currentStaff > 0 ? (fte / currentStaff) * 100 : 0;
@@ -220,7 +206,6 @@ function calcSLA() {
 }
 
 function calcSLAByQuarter() {
-  // FIX: Baca bulan dari string ISO agar tidak ada timezone shift (UTC+0 vs WIB UTC+7)
   function getLocalMonthSLA(dateStr) {
     if (!dateStr) return -1;
     const parts = String(dateStr).split('T')[0].split('-');
@@ -272,9 +257,6 @@ function badgeStatus(s) {
   return 'border border-ash text-ash bg-transparent whitespace-nowrap';
 }
 
-// ============================================================
-// PDF Print 
-// ============================================================
 function buildPrintHTML(type) {
   const m  = metrics();
   const s  = calcSLA();
@@ -559,9 +541,6 @@ function triggerPrint(type) {
   win.document.close();
 }
 
-// ============================================================
-// Excel Export
-// ============================================================
 function exportReportExcel(type) {
   const m = metrics();
   const s = calcSLA();
@@ -644,9 +623,6 @@ function exportReportExcel(type) {
   toast(`Laporan ${fname.replace('_',' ')} berhasil diunduh.`);
 }
 
-// ============================================================
-// Views
-// ============================================================
 function loginView() {
   return `
   <div class="min-h-screen flex items-center justify-center p-4">
@@ -791,9 +767,6 @@ function chartContainer(id, title, subtitle, heightPx = 280) {
   </div>`;
 }
 
-// ============================================================
-// Dashboard View
-// ============================================================
 function dashboardView() {
   const m = metrics();
   const s = calcSLA();
@@ -1295,11 +1268,8 @@ function calcFTEPerDiv() {
     kasusDiv.forEach(k => {
       beban += CATEGORY_STD_TIME[k.category.trim()] != null ? CATEGORY_STD_TIME[k.category.trim()] : state.fte.standardTime;
     });
-    // Waktu Kerja Tersedia = Jam Kerja per Hari × Hari Kerja per Tahun
     const jamTersedia = (cfg.hariKerja || 0) * (cfg.jamPerHari || 0);
-    // Waktu Kerja Efektif = Waktu Kerja Tersedia × (1 - Allowance)
     const jamEfektif = jamTersedia * (1 - (cfg.allowance || 0));
-    // FTE = Total Beban Kerja / Waktu Kerja Efektif per Orang
     const fte = jamEfektif > 0 ? beban / jamEfektif : 0;
     const utilisasi = cfg.aktual > 0 ? (fte / cfg.aktual) * 100 : 0;
     const efektif = fte <= cfg.aktual;
@@ -1522,9 +1492,6 @@ function reportView() {
   </section>`;
 }
 
-// ============================================================
-// Modals
-// ============================================================
 function confirmModalTemplate() {
   return `
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-sm">
@@ -1620,9 +1587,6 @@ function modalForm(item = null) {
   </div>`;
 }
 
-// ============================================================
-// Toast
-// ============================================================
 function toast(msg) {
   const wrap = document.getElementById('toastWrap');
   if (!wrap) return;
@@ -1639,9 +1603,6 @@ function toast(msg) {
   }, 3000);
 }
 
-// ============================================================
-// Chart rendering
-// ============================================================
 function destroyCharts() {
   for (const k in charts) { try { charts[k].destroy(); } catch(e){} }
   charts = {};
@@ -1678,7 +1639,6 @@ function renderCharts() {
 
     const c1 = document.getElementById('monthlyTrend');
     if (c1) {
-      // Data bulanan diambil dari kolom 'Bulan' di Excel — ground truth, tidak bergantung parsing tanggal
       const bulanMap = {
         'januari':0,'februari':1,'maret':2,'april':3,'mei':4,'juni':5,
         'juli':6,'agustus':7,'september':8,'oktober':9,'november':10,'desember':11
@@ -1689,7 +1649,6 @@ function renderCharts() {
         const idx = bulanMap[b];
         if (idx !== undefined) monthlyCounts[idx]++;
         else {
-          // fallback: baca dari tanggal jika bulan tidak ada
           const parts = String(x.entered || '').split('T')[0].split('-');
           if (parts.length >= 2) {
             const m = parseInt(parts[1], 10) - 1;
@@ -1871,9 +1830,6 @@ function renderCharts() {
   });
 }
 
-// ============================================================
-// Render
-// ============================================================
 function render() {
   const user = sessionUser();
   const activeId     = document.activeElement ? document.activeElement.id : null;
@@ -2072,24 +2028,16 @@ function detectImportFormat(rows) {
 }
 
 function parseSLArow(r, i) {
-  // Gabungkan kolom tanggal (Date object dari Excel) + kolom jam (string "HH:MM")
-  // menjadi string datetime lokal "YYYY-MM-DDTHH:MM:00" tanpa konversi timezone,
-  // supaya konsisten dengan format input form (datetime-local).
   function makeISO(tanggal, jam) {
     if (tanggal === undefined || tanggal === null || tanggal === '') return null;
     let y, mo, da;
     if (tanggal instanceof Date && !isNaN(tanggal)) {
-      // Tanggal dari Excel (dengan cellDates:true) dibaca dari komponen UTC
-      // supaya tidak bergeser akibat timezone browser.
       y = tanggal.getUTCFullYear(); mo = tanggal.getUTCMonth(); da = tanggal.getUTCDate();
     } else if (typeof tanggal === 'number') {
-      // Fallback: serial date Excel (hari sejak 1899-12-30)
       const epoch = new Date(Date.UTC(1899, 11, 30));
       const dt = new Date(epoch.getTime() + tanggal * 86400000);
       y = dt.getUTCFullYear(); mo = dt.getUTCMonth(); da = dt.getUTCDate();
     } else {
-      // Tanggal sebagai string (misal dari CSV: "2025-01-02" atau "2025-01-02T08:00:00")
-      // Ambil langsung dari string tanpa konstruksi Date supaya tidak ada timezone shift.
       const s = String(tanggal).trim();
       const datePart = s.includes('T') ? s.split('T')[0] : s.split(' ')[0];
       const dp = datePart.split('-');
@@ -2120,20 +2068,14 @@ function parseSLArow(r, i) {
     ? String(r['Kategori Komplain']).trim()
     : 'Fasilitas Umum';
 
-  // PIC Utama ditentukan dari kategori, sesuai Tabel 4.12 Skripsi
-  // (kolom "Divisi/PIC" di file SLA berisi semua pihak terkait, bukan hanya PIC utama).
   const pic = picMap[cat] || 'Teknisi';
 
   const entered   = makeISO(r['Tanggal Komplain Masuk'], r['Jam Komplain Masuk']);
   const responded = makeISO(r['Tanggal Respons Awal'],   r['Jam Respons Awal']);
   const completed = makeISO(r['Tanggal Komplain Selesai'], r['Jam Komplain Selesai']);
 
-  // Status kasus mengikuti ada/tidaknya tanggal selesai — independen dari status kepatuhan SLA,
-  // karena "selesai ditangani" dan "sesuai SLA" adalah dua hal yang berbeda.
   const status = completed ? 'Done' : (responded ? 'On Progress' : 'Pending');
 
-  // Simpan field bulan dari Excel supaya chart bulanan bisa baca langsung
-  // tanpa bergantung pada parsing tanggal (menghindari timezone issue sepenuhnya)
   const bulan = String(r['Bulan'] || '').trim();
 
   return {
